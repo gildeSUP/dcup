@@ -524,7 +524,10 @@ label.signup-row input { width: 18px; height: 18px; flex-shrink: 0; accent-color
           <span class="muted" id="t-board-hint"></span>
         </div>
         <div id="t-board-list"></div>
-        <button class="btn btn-danger btn-sm mt1" onclick="resetBoard()">Nullstill scorer</button>
+        <div style="display:flex;gap:8px;margin-top:0.5rem;">
+          <button class="btn btn-danger btn-sm" onclick="resetBoard()">Nullstill scorer</button>
+          <button class="btn btn-sm" id="t-board-display-btn" onclick="toggleDisplayDone()"></button>
+        </div>
       </div>
     </div>
 
@@ -1380,6 +1383,20 @@ function fkey(f){return safeKey(f[0])+'|||'+safeKey(f[1]);}
 function isBoard(t) { return (t.format||'groups')==='board'; }
 function scoreDirOf(t) { return t.scoreDir==='low' ? 'low' : 'high'; }
 
+// En turnering regnes som "startet" når trekningen er gjort (grupper), eller
+// når noen har levert score (poengtavle). Liveskjermen skal ikke vise noe
+// som ikke er i gang ennå, og heller ikke noe som er markert som fullført.
+function isStarted(t) {
+  if (isBoard(t)) return Object.keys(t.scores||{}).length > 0;
+  return (t.groupA||[]).length > 0;
+}
+
+function toggleDisplayDone() {
+  tState.hideFromDisplay = !tState.hideFromDisplay;
+  renderTournamentView();
+  tWrite({ hideFromDisplay: tState.hideFromDisplay });
+}
+
 // Rangert tavle. Spillere uten score havner nederst, uansett retning.
 function boardStandings(t) {
   const scores = t.scores||{};
@@ -1423,6 +1440,8 @@ function renderBoard() {
         </div>`;
       }).join('')
     : '<p class="muted">Ingen spillere ennå.</p>';
+  const displayBtn = document.getElementById('t-board-display-btn');
+  displayBtn.textContent = tState.hideFromDisplay ? '✓ Skjult fra liveskjerm — vis igjen' : 'Merk som fullført (skjul fra liveskjerm)';
 }
 
 // Poengtavla er nettopp der flere folk skriver inn sin egen score samtidig
@@ -1657,7 +1676,8 @@ function renderTournamentView() {
         <div class="podium-item silver"><span class="podium-medal">🥈</span><div class="podium-pos">2. plass</div><div class="podium-name">${escapeHTML(runnerUp||'—')}</div></div>
         <div class="podium-item gold"><span class="podium-medal">🥇</span><div class="podium-pos">1. plass</div><div class="podium-name">${escapeHTML(champion)}</div></div>
         <div class="podium-item bronze"><span class="podium-medal">🥉</span><div class="podium-pos">3. plass</div><div class="podium-name">${escapeHTML(third||'—')}</div></div>
-      </div>`;
+      </div>
+      <button class="btn btn-sm mb1" onclick="toggleDisplayDone()">${tState.hideFromDisplay ? '✓ Skjult fra liveskjerm — vis igjen' : 'Merk som fullført (skjul fra liveskjerm)'}</button>`;
   } else { winnerSection.innerHTML = ''; }
 
   document.getElementById('t-playoff-matches').innerHTML = Array.from({length:size},(_,i)=>{
@@ -1872,10 +1892,16 @@ async function loadDisplayScreen(eventId) {
   startDisplayRotation();
 }
 
+// Skjuler turneringer som ikke er startet ennå, eller som er markert
+// fullført — liveskjermen skal bare vise det som faktisk pågår.
+function visibleDispTournaments() {
+  return Object.entries(dispTournaments).filter(([,t]) => isStarted(t) && !t.hideFromDisplay);
+}
+
 function startDisplayRotation() {
   const STAY = 12000; // 12s per turnering
   displayIntervals.push(setInterval(()=>{
-    const tList = Object.entries(dispTournaments);
+    const tList = visibleDispTournaments();
     if (tList.length < 2) return; // én turnering: ingenting å rullere mellom
     dispCurrent = (dispCurrent+1)%tList.length;
     renderDisplay();
@@ -1891,9 +1917,10 @@ function animateProgressBar(duration) {
 }
 
 function renderDisplay() {
-  const tList = Object.entries(dispTournaments);
+  const tList = visibleDispTournaments();
   if (!tList.length) {
-    document.getElementById('disp-content').innerHTML = '<div style="opacity:0.3;text-align:center;padding:3rem;font-size:18px;">Ingen turneringer ennå</div>';
+    const msg = Object.keys(dispTournaments).length ? 'Venter på at en turnering skal starte' : 'Ingen turneringer ennå';
+    document.getElementById('disp-content').innerHTML = `<div style="opacity:0.3;text-align:center;padding:3rem;font-size:18px;">${msg}</div>`;
     return;
   }
   dispCurrent = Math.min(dispCurrent, tList.length-1);
