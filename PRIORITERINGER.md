@@ -34,37 +34,42 @@ den ekte basen. Test med en throwaway-event før den ekte brukes.
 
 Ikke gjort. Gjelder tjenesten som helhet, ikke bare reglene i #5.
 
-**Rammen:** deltakernavn er ikke sensitive opplysninger i seg selv, så dette
-handler ikke om lekkasjepanikk. Poenget er at tjenesten skal være trygg: at
-ingen utenfra kan komme til data de ikke skal ha, og at ingen kan ødelegge et
-event som pågår.
+**Rammen, slik den er nå:** deltakernavn er ikke sensitive opplysninger i seg
+selv, og tjenesten er per i dag ment for **ett event**. Basen inneholder altså
+det eventet alle deltakerne uansett har linken til. «Noen kan lese hele basen»
+betyr derfor i praksis «noen kan lese det eventet de allerede er invitert til»
+— ubehagelig, men ikke en lekkasje. Dette handler om at tjenesten skal være
+solid, ikke om lekkasjepanikk.
 
-Det som må gjennomgås:
+Det betyr at lista under deler seg i to.
 
-- [ ] **Kan noen hente ut alt med ett kall?** Ligger `.read` på roten i stedet
-      for på `events/$eventId`, kan hvem som helst lese hele basen — alle
-      events, alle navn, alle resultater. Dette er #5, og det er den viktigste
-      enkeltposten i hele lista.
-- [ ] **Kan noen skrive hvor som helst?** Samme spørsmål for `.write`. Uten
-      `.validate` kan en tom base fylles opp med vilkårlig data av hvem som
-      helst som finner databaseadressen (den ligger i `index.html`, som seg
-      hør og bør for en Firebase-webklient — den er ikke en hemmelighet).
-- [ ] **Er event-ID-en den eneste sperren, og holder den?** `uuid()` bruker
-      `Math.random()`, ikke `crypto.getRandomValues()`. For en firmafest er
-      det greit, men det bør være et bevisst valg, ikke en forglemmelse —
-      og det er et par linjer å bytte.
-- [ ] **Lekker vi event-ID-en videre?** Siden laster Firebase-SDK-en fra
-      `cdn.jsdelivr.net`, og `Referer` på den forespørselen inneholder hele
-      URL-en inkludert `?e=<id>`. `<meta name="referrer" content="no-referrer">`
-      lukker det med én linje.
+**Gjelder allerede i dag, med ett event:**
+
+- [ ] **Kan noen skrive hvor som helst?** Dette er den skarpe kanten nå. Uten
+      `.write` bundet til `events/$eventId` og uten `.validate` kan hvem som
+      helst som finner databaseadressen (den ligger i `index.html`, som seg hør
+      og bør for en Firebase-webklient — den er ikke en hemmelighet) skrive
+      søppel inn i det pågående eventet, eller fylle opp basen.
 - [ ] **Er XSS-en fortsatt lukket?** P0 #1 fjernet navn fra `onclick`-strenger.
       Alt som er skrevet siden bruker `escapeHTML`, `textContent` eller
       `data-`-attributter, men det er verdt en gjennomgang av alle `innerHTML`
       med brukerdata i seg — særlig de nyeste (`tieNoteHTML`, sluttspillkortene).
-- [ ] **Kan et event slettes eller ødelegges?** Det finnes ingen sletting
-      (#10) og ingen roller (#26). Alle med linken kan nullstille alt. Riktig
-      for en firmafest, men det bør være et valg vi har tatt, ikke noe vi
-      oppdager under eventet.
+      Et navn er det eneste stedet en fremmed får skrive fritt inn i appen.
+- [ ] **Kan et event ødelegges?** Det finnes ingen sletting (#10) og ingen
+      roller (#26). Alle med linken kan nullstille alt, midt under eventet.
+      Riktig for en firmafest, men det bør være et valg vi har tatt.
+
+**Blir viktig i det øyeblikket det finnes event nummer to:**
+
+- [ ] **Leser reglene på tvers av events?** `.read` må ligge på
+      `events/$eventId`, ikke på roten — ellers kan deltakerne på ett event
+      lese alle de andre.
+- [ ] **Holder event-ID-en som sperre?** `uuid()` bruker `Math.random()`, ikke
+      `crypto.getRandomValues()`. Med ett event spiller det ingen rolle; med
+      mange er ID-en det eneste som skiller dem. Et par linjer å bytte.
+- [ ] **Lekker vi ID-en videre?** `Referer` mot `cdn.jsdelivr.net` inneholder
+      hele URL-en inkludert `?e=<id>`. `<meta name="referrer" content="no-referrer">`
+      lukker det med én linje.
 - [ ] **Hva ligger igjen etterpå?** Ingen sletting, ingen utløpstid. Basen
       vokser med hvert event og alt blir stående for alltid.
 
