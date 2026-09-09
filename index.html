@@ -46,6 +46,13 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .header-right { display: flex; align-items: center; gap: 10px; }
 .sync-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
 .sync-label { font-size: 12px; color: var(--text2); }
+/* Smale skjermer: fire knapper med tekst blir trangt — behold ikonene
+   (og tallet på deltaker-knappen), skjul resten av teksten. */
+@media (max-width: 420px) {
+  .header-right { gap: 6px; }
+  .header-right .btn-label { display: none; }
+  .header-right .copy-btn { padding: 6px 9px; }
+}
 
 /* ===== BUTTONS ===== */
 button { font-family: inherit; cursor: pointer; }
@@ -361,12 +368,12 @@ label.signup-row input { width: 18px; height: 18px; flex-shrink: 0; accent-color
       <div class="muted" id="event-desc-display" style="font-size:12px;"></div>
     </div>
     <div class="header-right">
-      <button class="copy-btn" id="people-count-btn" onclick="showPeopleDialog()">👥 0</button>
-      <button class="copy-btn" onclick="showJoinDialog()">+ Legg til</button>
-      <button class="copy-btn" onclick="copyEventLink()">Del link</button>
-      <div style="display:flex;align-items:center;gap:5px;">
+      <button class="copy-btn" id="people-count-btn" onclick="showPeopleDialog()" title="Deltakere">👥 0</button>
+      <button class="copy-btn" onclick="showJoinDialog()" title="Meld på deltaker">+<span class="btn-label"> Legg til</span></button>
+      <button class="copy-btn" onclick="copyEventLink()" title="Del link">🔗<span class="btn-label"> Del link</span></button>
+      <div style="display:flex;align-items:center;gap:5px;" title="Live">
         <div class="sync-dot" id="sync-dot" style="background:#16a34a;"></div>
-        <span class="sync-label" id="sync-label">Live</span>
+        <span class="sync-label btn-label" id="sync-label">Live</span>
       </div>
     </div>
   </div>
