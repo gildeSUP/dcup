@@ -231,7 +231,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 .podium-item.bronze .podium-name { color: var(--green-text); }
 
 /* ===== LIVE DISPLAY ===== */
-.display-layout { display: flex; flex-direction: column; }
+.display-layout { display: flex; flex-direction: column; position: relative; }
 .display-header { padding: 1rem 1.5rem; border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: space-between; }
 .display-event-name { font-size: 14px; font-weight: 600; opacity: 0.6; }
 .display-tournament-name { font-size: 18px; font-weight: 700; }
@@ -272,6 +272,28 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 .display-queue-grp { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 20px; }
 .display-queue-grp.a { background: rgba(37,99,235,0.25); color: #93c5fd; }
 .display-queue-grp.b { background: rgba(22,163,74,0.25); color: #86efac; }
+/* ===== VINNERAVSLØRING PÅ LIVESKJERM ===== */
+.reveal { position: absolute; inset: 0; background: #07070c; display: flex; align-items: center; justify-content: center; z-index: 50; overflow: hidden; }
+.reveal canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.reveal-inner { position: relative; text-align: center; padding: 2rem; max-width: 90%; }
+.reveal-eyebrow { font-size: 15px; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase; color: rgba(255,255,255,0.4); margin-bottom: 1.25rem; min-height: 1.2em; }
+.reveal-line { font-size: clamp(22px, 3.4vw, 40px); font-weight: 600; color: rgba(255,255,255,0.92); line-height: 1.25; min-height: 1.3em; max-width: 24ch; margin: 0 auto; }
+.reveal-line.fade { animation: revealFade 0.5s ease both; }
+.reveal-name { font-size: clamp(44px, 9vw, 128px); font-weight: 800; letter-spacing: -0.02em; line-height: 1; color: #fcd34d; text-shadow: 0 0 60px rgba(252,211,77,0.45); margin-top: 1.5rem; opacity: 0; text-wrap: balance; }
+.reveal-name.in { animation: revealSlam 0.75s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.reveal-podium { display: flex; align-items: flex-end; justify-content: center; gap: 1.25rem; margin-top: 2.5rem; opacity: 0; }
+.reveal-podium.in { animation: revealFade 0.7s ease both; }
+.reveal-step { border-radius: 12px 12px 0 0; padding: 1rem 1.25rem 1.25rem; min-width: 150px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-bottom: none; }
+.reveal-step.gold { background: rgba(234,179,8,0.16); border-color: rgba(234,179,8,0.45); padding-bottom: 2.75rem; }
+.reveal-step.silver { padding-bottom: 1.75rem; }
+.reveal-medal { font-size: 34px; display: block; }
+.reveal-step-pos { font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.4); margin: 0.35rem 0 0.15rem; }
+.reveal-step-name { font-size: 19px; font-weight: 700; color: #fff; }
+@keyframes revealFade { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@keyframes revealSlam { 0% { opacity: 0; transform: scale(1.6); filter: blur(14px); } 100% { opacity: 1; transform: scale(1); filter: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .reveal-line.fade, .reveal-name.in, .reveal-podium.in { animation: none; opacity: 1; transform: none; filter: none; }
+}
 .display-footer { padding: 0.75rem 1.5rem; border-top: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; justify-content: space-between; }
 .display-live { display: flex; align-items: center; gap: 6px; font-size: 12px; opacity: 0.4; }
 .display-live-dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; animation: pulse 2s ease-in-out infinite; }
@@ -309,6 +331,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
    otherwise force display:block + uppercase text, breaking the layout onto multiple lines. */
 label.signup-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 0.5px solid var(--border); cursor: pointer; text-transform: none; font-size: inherit; font-weight: normal; color: var(--text); letter-spacing: normal; margin-bottom: 0; }
 label.signup-row:last-child { border-bottom: none; }
+label.signup-row.locked { opacity: 0.45; cursor: default; }
 label.signup-row input { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--accent); }
 .join-icon { font-size: 20px; }
 .join-info { display: flex; flex-direction: column; flex: 1; min-width: 0; }
@@ -543,7 +566,10 @@ label.signup-row input { width: 18px; height: 18px; flex-shrink: 0; accent-color
       <div id="ttab-groups" class="tab-panel" style="display:block;">
         <div class="groups-grid" id="t-groups-grid"></div>
         <p class="muted" id="t-scoring-hint" style="margin-bottom:0.75rem;"></p>
-        <button class="btn btn-danger btn-sm" onclick="resetTournament()">Nullstill turnering</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-danger btn-sm" onclick="resetTournament()">Nullstill turnering</button>
+          <button class="btn btn-sm" id="t-display-btn" onclick="toggleDisplayDone()"></button>
+        </div>
       </div>
 
       <div id="ttab-fixtures" class="tab-panel" style="display:none;">
@@ -579,6 +605,15 @@ label.signup-row input { width: 18px; height: 18px; flex-shrink: 0; accent-color
   </div>
   <div class="display-next-bar"><div class="display-next-fill" id="disp-next-fill"></div></div>
   <div class="display-content" id="disp-content"></div>
+  <div class="reveal" id="disp-reveal" style="display:none;">
+    <canvas id="disp-fireworks"></canvas>
+    <div class="reveal-inner">
+      <div class="reveal-eyebrow" id="reveal-eyebrow"></div>
+      <div class="reveal-line" id="reveal-line"></div>
+      <div class="reveal-name" id="reveal-name"></div>
+      <div class="reveal-podium" id="reveal-podium"></div>
+    </div>
+  </div>
   <div class="display-footer">
     <div class="display-live"><div class="display-live-dot"></div> Live</div>
     <button class="btn-ghost btn-sm" onclick="exitDisplay()" style="opacity:0.4;font-size:11px;">Avslutt</button>
@@ -906,16 +941,24 @@ function renderTournamentList() {
   }
   list.innerHTML = entries.map(([id, t]) => {
     const sport = SPORTS.find(s=>s.id===t.sport)||SPORTS[SPORTS.length-1];
-    const played = Object.values({...t.resultsA||{}, ...t.resultsB||{}}).filter(r=>r.winner).length;
-    const total = (t.fixturesA||[]).length + (t.fixturesB||[]).length;
-    const done = played === total && total > 0;
+    const done = isFinished(t);
+    let progress;
+    if (isBoard(t)) {
+      const players = t.players || [];
+      const scored = players.filter(n => typeof ((t.scores||{})[safeKey(n)]||{}).score === 'number').length;
+      progress = players.length ? `${scored}/${players.length} score` : 'Sett opp';
+    } else {
+      const played = Object.values({...t.resultsA||{}, ...t.resultsB||{}}).filter(r=>r.winner).length;
+      const total = (t.fixturesA||[]).length + (t.fixturesB||[]).length;
+      progress = total ? `${played}/${total} spilt` : 'Sett opp';
+    }
     return `<div class="tournament-card" onclick="openTournament('${id}')">
       <span class="tc-icon">${sport.icon}</span>
       <div class="tc-info">
         <div class="tc-name">${escapeHTML(t.name)}</div>
         <div class="tc-meta">${sport.label} · ${MODES[t.mode]?.label||t.mode}</div>
       </div>
-      <span class="tc-badge ${done?'':'pending'}">${done?'Ferdig':total?played+'/'+total+' spilt':'Sett opp'}</span>
+      <span class="tc-badge ${done?'':'pending'}">${done?'Ferdig':progress}</span>
     </div>`;
   }).join('');
 }
@@ -1089,12 +1132,16 @@ function renderJoinList() {
   }
   wrap.innerHTML = entries.map(([id, t]) => {
     const sport = SPORTS.find(s=>s.id===t.sport)||SPORTS[SPORTS.length-1];
-    return `<label class="signup-row">
-      <input type="checkbox" data-tid="${id}" checked />
+    // Startede turneringer er sperret: trekningen er gjort, så et nytt navn i
+    // players havner ikke i noen gruppe og ville stått som påmeldt uten å
+    // finnes i tabellen, kampene eller oppsettet.
+    const started = isStarted(t);
+    return `<label class="signup-row${started?' locked':''}">
+      <input type="checkbox" data-tid="${id}" ${started?'disabled':'checked'} />
       <span class="join-icon">${sport.icon}</span>
       <span class="join-info">
         <span class="join-name-txt">${escapeHTML(t.name)}</span>
-        <span class="join-sub">${sport.label}</span>
+        <span class="join-sub">${sport.label}${started?' · startet':''}</span>
       </span>
     </label>`;
   }).join('');
@@ -1116,7 +1163,10 @@ async function saveJoin() {
     await db.ref('events/'+currentEventId+'/people/'+safeKey(name))
       .update({ name, joined: Date.now() });
     for (const box of document.querySelectorAll('#join-list input[type=checkbox]')) {
-      if (box.checked) await setSignup(box.dataset.tid, name, true);
+      if (box.disabled || !box.checked) continue;
+      // Sjekkes på nytt her: turneringen kan ha blitt startet mens dialogen sto åpen
+      if (isStarted(tournaments[box.dataset.tid] || {})) continue;
+      await setSignup(box.dataset.tid, name, true);
     }
     showToast('Lagt til!');
     hideJoinDialog();
@@ -1391,6 +1441,68 @@ function isStarted(t) {
   return (t.groupA||[]).length > 0;
 }
 
+// Motstykket til isStarted: alt som skal spilles er spilt. For grupper betyr
+// det alle gruppekamper, for poengtavle at hver deltaker har levert en score.
+// Merk at "ferdig gruppespill" ikke er det samme som "finalen er spilt".
+function isFinished(t) {
+  if (isBoard(t)) {
+    const players = t.players || [];
+    if (!players.length) return false;
+    return players.every(n => typeof ((t.scores||{})[safeKey(n)]||{}).score === 'number');
+  }
+  const order = playOrder(t);
+  if (!order.length) return false;
+  return order.every(m => isPlayed(t, m));
+}
+
+// Pallen for begge formater, delt mellom appen og liveskjermen. Returnerer
+// null når det ikke finnes en vinner ennå — for grupper betyr det at finalen
+// ikke er spilt, for poengtavle at ikke alle har levert score.
+function podium(t) {
+  if (isBoard(t)) {
+    if (!isFinished(t)) return null;
+    const rows = boardStandings(t).filter(r => r.score !== null);
+    if (!rows.length) return null;
+    return { champion: rows[0].name, runnerUp: (rows[1]||{}).name, third: (rows[2]||{}).name };
+  }
+  const pr = t.playoffResults || {};
+  const fin = pr['match_0'] || {}, bronze = pr['match_1'] || {};
+  if (!fin.winner || fin.winner === 'draw') return null;
+  const dir = scoreDirOf(t);
+  const sA = calcStandings(t.groupA||[], t.resultsA||{}, t.mode, dir);
+  const sB = calcStandings(t.groupB||[], t.resultsB||{}, t.mode, dir);
+  const poName = (i, side) => side==='a' ? (sA[i]||{}).name : side==='b' ? (sB[i]||{}).name : undefined;
+  const champion = poName(0, fin.winner);
+  if (!champion) return null;
+  return {
+    champion,
+    runnerUp: fin.winner==='a' ? poName(0,'b') : poName(0,'a'),
+    third: poName(1, bronze.winner),
+  };
+}
+
+// Kommentatorlinja. Alt her er hentet fra faktiske tall — ingen påstander
+// appen ikke kan belegge.
+function winnerBlurb(t, name) {
+  if (isBoard(t)) {
+    const rows = boardStandings(t).filter(r => r.score !== null);
+    const me = rows[0], next = rows[1];
+    if (!me) return '';
+    if (!next) return `${me.score} — det eneste registrerte resultatet.`;
+    const diff = Math.abs(me.score - next.score);
+    if (!diff) return `${me.score}, delt beste resultat av ${rows.length} — men først til å levere.`;
+    return `${me.score}, ${diff} ${scoreDirOf(t)==='low'?'mindre':'mer'} enn nestemann av ${rows.length} deltakere.`;
+  }
+  const inA = (t.groupA||[]).includes(name);
+  const group = inA ? (t.groupA||[]) : (t.groupB||[]);
+  const results = inA ? (t.resultsA||{}) : (t.resultsB||{});
+  const me = calcStandings(group, results, t.mode, scoreDirOf(t)).find(r => r.name === name);
+  if (!me || !me.p) return 'Seier i finalen.';
+  if (!me.l && me.w === me.p) return `Ubeslått gjennom hele gruppespillet — ${me.w} av ${me.p} kamper vunnet, og finalen med.`;
+  if (!me.l) return `Ikke tapt en kamp i gruppa på ${me.p} forsøk, og så finalen.`;
+  return `${me.w} av ${me.p} kamper vunnet i gruppa, og seier i finalen.`;
+}
+
 function toggleDisplayDone() {
   tState.hideFromDisplay = !tState.hideFromDisplay;
   renderTournamentView();
@@ -1658,10 +1770,13 @@ function renderTournamentView() {
   const size = Math.min(sA.length, sB.length);
   // playoffResults lagrer vinnersiden ('a'/'b'), på samme form som gruppespillet
   const poName = (i, side) => side==='a' ? (sA[i]||{}).name : side==='b' ? (sB[i]||{}).name : undefined;
-  const fin = pr['match_0']||{}, bronze = pr['match_1']||{};
-  const champion = poName(0, fin.winner);
-  const runnerUp = fin.winner==='a' ? poName(0,'b') : fin.winner==='b' ? poName(0,'a') : undefined;
-  const third    = poName(1, bronze.winner);
+  const pod = podium(tState) || {};
+  const { champion, runnerUp, third } = pod;
+
+  const displayBtn = document.getElementById('t-display-btn');
+  if (displayBtn) displayBtn.textContent = tState.hideFromDisplay
+    ? '✓ Skjult fra liveskjerm — vis igjen'
+    : 'Merk som fullført (skjul fra liveskjerm)';
 
   const winnerSection = document.getElementById('t-winner-section');
   if (champion) {
@@ -1676,8 +1791,7 @@ function renderTournamentView() {
         <div class="podium-item silver"><span class="podium-medal">🥈</span><div class="podium-pos">2. plass</div><div class="podium-name">${escapeHTML(runnerUp||'—')}</div></div>
         <div class="podium-item gold"><span class="podium-medal">🥇</span><div class="podium-pos">1. plass</div><div class="podium-name">${escapeHTML(champion)}</div></div>
         <div class="podium-item bronze"><span class="podium-medal">🥉</span><div class="podium-pos">3. plass</div><div class="podium-name">${escapeHTML(third||'—')}</div></div>
-      </div>
-      <button class="btn btn-sm mb1" onclick="toggleDisplayDone()">${tState.hideFromDisplay ? '✓ Skjult fra liveskjerm — vis igjen' : 'Merk som fullført (skjul fra liveskjerm)'}</button>`;
+      </div>`;
   } else { winnerSection.innerHTML = ''; }
 
   document.getElementById('t-playoff-matches').innerHTML = Array.from({length:size},(_,i)=>{
@@ -1869,6 +1983,7 @@ function openDisplayScreen() {
 }
 
 function exitDisplay() {
+  clearReveal();
   displayIntervals.forEach(clearInterval);
   displayIntervals=[];
   if (dispRef) dispRef.off();
@@ -1887,6 +2002,7 @@ async function loadDisplayScreen(eventId) {
   dispRef.on('value', snap=>{
     dispTournaments = snap.val()||{};
     renderDisplay();
+    checkForReveal();
   });
   showScreen('screen-display');
   startDisplayRotation();
@@ -1898,9 +2014,184 @@ function visibleDispTournaments() {
   return Object.entries(dispTournaments).filter(([,t]) => isStarted(t) && !t.hideFromDisplay);
 }
 
+// ===== VINNERAVSLØRING =====
+// Spilles én gang, når skjermen ser en vinner dukke opp mens den står på.
+// Ved oppstart merkes vinnere som alt finnes som avslørt, slik at en
+// oppfriskning av TV-en ikke spiller av gamle finaler på nytt.
+let revealedWinners = new Set();
+let revealSeeded = false;
+let revealBusy = false;
+let revealTimers = [];
+let fireworks = null;
+
+function seedRevealed() {
+  Object.entries(dispTournaments).forEach(([tid, t]) => {
+    if (podium(t)) revealedWinners.add(tid);
+  });
+  revealSeeded = true;
+}
+
+function checkForReveal() {
+  if (!revealSeeded) { seedRevealed(); return; }
+  if (revealBusy) return;
+  for (const [tid, t] of Object.entries(dispTournaments)) {
+    if (t.hideFromDisplay || revealedWinners.has(tid)) continue;
+    const pod = podium(t);
+    if (pod) { revealedWinners.add(tid); playReveal(tid); return; }
+  }
+}
+
+function clearReveal() {
+  revealTimers.forEach(clearTimeout);
+  revealTimers = [];
+  if (fireworks) { fireworks.stop(); fireworks = null; }
+  revealBusy = false;
+  const el = document.getElementById('disp-reveal');
+  if (el) el.style.display = 'none';
+}
+
+function playReveal(tid) {
+  const el = document.getElementById('disp-reveal');
+  const t = dispTournaments[tid];
+  const pod = t && podium(t);
+  if (!el || !pod) return;
+  revealBusy = true;
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const eyebrow = document.getElementById('reveal-eyebrow');
+  const line = document.getElementById('reveal-line');
+  const nameEl = document.getElementById('reveal-name');
+  const podEl = document.getElementById('reveal-podium');
+
+  const setLine = txt => {
+    line.textContent = txt;
+    line.classList.remove('fade');
+    void line.offsetWidth; // tvinger animasjonen til å starte på nytt
+    line.classList.add('fade');
+  };
+
+  eyebrow.textContent = '';
+  line.textContent = '';
+  nameEl.textContent = '';
+  nameEl.classList.remove('in');
+  podEl.innerHTML = '';
+  podEl.classList.remove('in');
+  el.style.display = 'flex';
+
+  const step = (ms, fn) => revealTimers.push(setTimeout(fn, reduce ? Math.min(ms, 600) : ms));
+
+  const showName = () => {
+    eyebrow.textContent = 'Vinneren er';
+    line.textContent = '';
+    nameEl.textContent = pod.champion;
+    nameEl.classList.add('in');
+    if (!reduce) fireworks = startFireworks(document.getElementById('disp-fireworks'));
+  };
+
+  const showPodium = () => {
+    const fresh = podium(dispTournaments[tid] || {}) || pod;
+    const rows = [
+      { cls: 'silver', medal: '🥈', pos: '2. plass', name: fresh.runnerUp },
+      { cls: 'gold', medal: '🥇', pos: '1. plass', name: fresh.champion },
+      { cls: 'bronze', medal: '🥉', pos: '3. plass', name: fresh.third },
+    ].filter(r => r.name);
+    podEl.innerHTML = rows.map(r => `
+      <div class="reveal-step ${r.cls}">
+        <span class="reveal-medal">${r.medal}</span>
+        <div class="reveal-step-pos">${r.pos}</div>
+        <div class="reveal-step-name">${escapeHTML(r.name)}</div>
+      </div>`).join('');
+    podEl.classList.add('in');
+  };
+
+  eyebrow.textContent = 'Og vi har en vinner i';
+  setLine(t.name || 'turneringen');
+  step(3400, () => { eyebrow.textContent = ''; setLine(winnerBlurb(t, pod.champion)); });
+  step(7400, () => { eyebrow.textContent = ''; setLine('Vinneren er…'); });
+  step(9600, showName);
+  step(12200, showPodium);
+  step(reduce ? 9000 : 22000, clearReveal);
+}
+
+// Enkelt partikkelsystem på canvas. Ingen bibliotek, ingen SVG-baner.
+function startFireworks(canvas) {
+  if (!canvas) return null;
+  const ctx = canvas.getContext('2d');
+  let raf = null, burstTimer = null, running = true;
+  let particles = [];
+  const COLORS = ['#fcd34d', '#93c5fd', '#86efac', '#f9a8d4', '#fdba74', '#ffffff'];
+
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = canvas.clientWidth * dpr;
+    canvas.height = canvas.clientHeight * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  resize();
+
+  function burst() {
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    const x = w * (0.15 + Math.random() * 0.7);
+    const y = h * (0.12 + Math.random() * 0.4);
+    const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+    const count = 60 + Math.floor(Math.random() * 40);
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count + Math.random() * 0.2;
+      const speed = 1.6 + Math.random() * 3.4;
+      particles.push({
+        x, y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 1,
+        decay: 0.008 + Math.random() * 0.012,
+        color,
+        size: 1.4 + Math.random() * 1.8,
+      });
+    }
+    if (particles.length > 2200) particles = particles.slice(-2200);
+  }
+
+  function frame() {
+    if (!running) return;
+    ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+    particles = particles.filter(p => p.life > 0);
+    particles.forEach(p => {
+      p.vy += 0.035;          // tyngdekraft
+      p.vx *= 0.985;          // luftmotstand
+      p.vy *= 0.985;
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life -= p.decay;
+      ctx.globalAlpha = Math.max(p.life, 0);
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+    raf = requestAnimationFrame(frame);
+  }
+
+  burst();
+  burstTimer = setInterval(burst, 620);
+  frame();
+  window.addEventListener('resize', resize);
+
+  return {
+    stop() {
+      running = false;
+      if (raf) cancelAnimationFrame(raf);
+      if (burstTimer) clearInterval(burstTimer);
+      window.removeEventListener('resize', resize);
+      ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+      particles = [];
+    }
+  };
+}
+
 function startDisplayRotation() {
   const STAY = 12000; // 12s per turnering
   displayIntervals.push(setInterval(()=>{
+    if (revealBusy) return; // ikke bytt turnering midt i en avsløring
     const tList = visibleDispTournaments();
     if (tList.length < 2) return; // én turnering: ingenting å rullere mellom
     dispCurrent = (dispCurrent+1)%tList.length;
@@ -1934,7 +2225,35 @@ function renderDisplay() {
   ).join('');
 
   const board = isBoard(t);
-  document.getElementById('disp-content').innerHTML = `
+  const pod = podium(t);
+  const content = document.getElementById('disp-content');
+
+  // Ferdig turnering: pallen er det som betyr noe, ikke tabellen. Den blir
+  // stående til noen merker turneringen som fullført.
+  if (pod) {
+    const rows = [
+      { cls:'silver', medal:'🥈', pos:'2. plass', name:pod.runnerUp },
+      { cls:'gold',   medal:'🥇', pos:'1. plass', name:pod.champion },
+      { cls:'bronze', medal:'🥉', pos:'3. plass', name:pod.third },
+    ].filter(r => r.name);
+    content.innerHTML = `
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:1.5rem;">
+        <div class="display-section-title" style="margin:0;">🏆 ${escapeHTML(t.name||'')} er avgjort</div>
+        <div class="reveal-name" style="opacity:1;margin:0;font-size:clamp(34px,6vw,76px);">${escapeHTML(pod.champion)}</div>
+        <div class="display-card-sub" style="font-size:15px;opacity:0.55;max-width:46ch;text-align:center;">${escapeHTML(winnerBlurb(t, pod.champion))}</div>
+        <div class="reveal-podium" style="margin:0;opacity:1;">
+          ${rows.map(r => `
+            <div class="reveal-step ${r.cls}">
+              <span class="reveal-medal">${r.medal}</span>
+              <div class="reveal-step-pos">${r.pos}</div>
+              <div class="reveal-step-name">${escapeHTML(r.name)}</div>
+            </div>`).join('')}
+        </div>
+      </div>`;
+    return;
+  }
+
+  content.innerHTML = `
     <div class="display-main">
       <div class="display-col">
         <div class="display-section-title">${board?'Poengtavle':'Tabell'}</div>
