@@ -242,16 +242,25 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 .display-pos.p2 { background: rgba(255,255,255,0.1); color: #fff; }
 .display-pos.p3 { background: rgba(34,197,94,0.2); color: #86efac; }
 .display-pos.px { background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.4); }
-.display-fixture { display: flex; align-items: center; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.06); gap: 8px; font-size: 14px; font-weight: 500; }
-.display-fixture:last-child { border-bottom: none; }
-.display-fix-team { flex: 1; color: rgba(255,255,255,0.85); }
-.display-fix-team.r { text-align: right; }
-.display-fix-vs { font-size: 11px; color: rgba(255,255,255,0.3); }
-.display-fix-badge { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 20px; }
-.display-fix-badge.res-a { background: rgba(37,99,235,0.25); color: #93c5fd; }
-.display-fix-badge.res-b { background: rgba(22,163,74,0.25); color: #86efac; }
-.display-fix-badge.res-d { background: rgba(217,119,6,0.25); color: #fcd34d; }
-.display-fix-badge.res-none { color: rgba(255,255,255,0.2); }
+.display-main { display: grid; grid-template-columns: 1.5fr 1fr; gap: 2rem; height: 100%; min-height: 0; }
+.display-col { min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+.display-card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); border-radius: 12px; padding: 1rem 1.15rem; }
+.display-card + .display-card { margin-top: 1rem; }
+.display-card.next { border-color: rgba(37,99,235,0.35); background: rgba(37,99,235,0.08); }
+.display-card-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; opacity: 0.45; margin-bottom: 0.5rem; }
+.display-card-sub { font-size: 12px; opacity: 0.45; margin-top: 0.35rem; }
+.display-result-line { font-size: 22px; font-weight: 700; color: #fff; }
+.display-vs { margin: 0 0.45rem; font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.35); }
+.display-score { display: inline-block; margin: 0 0.5rem; padding: 1px 10px; border-radius: 20px; background: rgba(255,255,255,0.12); }
+.display-queue-item { display: flex; align-items: center; gap: 0.75rem; padding: 11px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.display-queue-item:last-child { border-bottom: none; }
+.display-queue-num { width: 20px; text-align: center; font-size: 12px; font-weight: 700; color: rgba(255,255,255,0.3); }
+.display-queue-teams { flex: 1; font-size: 16px; font-weight: 600; color: rgba(255,255,255,0.75); }
+.display-queue-item.up-next .display-queue-teams { font-size: 19px; font-weight: 700; color: #fff; }
+.display-queue-item.up-next .display-queue-num { color: #93c5fd; }
+.display-queue-grp { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 20px; }
+.display-queue-grp.a { background: rgba(37,99,235,0.25); color: #93c5fd; }
+.display-queue-grp.b { background: rgba(22,163,74,0.25); color: #86efac; }
 .display-footer { padding: 0.75rem 1.5rem; border-top: 1px solid rgba(255,255,255,0.06); display: flex; align-items: center; justify-content: space-between; }
 .display-live { display: flex; align-items: center; gap: 6px; font-size: 12px; opacity: 0.4; }
 .display-live-dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; animation: pulse 2s ease-in-out infinite; }
@@ -323,7 +332,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
       <label>Beskrivelse (valgfritt)</label>
       <input type="text" id="event-desc" placeholder="f.eks. Utendørs aktivitetsdag" maxlength="100" />
     </div>
-    <button class="btn-full" id="create-event-btn" onclick="createEvent()">Opprett event</button>
+    <button class="btn-full" id="create-event-btn" onclick="doCreateEvent()">Opprett event</button>
   </div>
 </div>
 
@@ -497,10 +506,6 @@ function escapeHTML(s) {
 function uuid() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return(c==='x'?r:(r&0x3|0x8)).toString(16);});
 }
-function ordinal(n) {
-  const s=['th','st','nd','rd'],v=n%100;
-  return n+(s[(v-20)%10]||s[v]||s[0]);
-}
 function showToast(msg) {
   const t=document.getElementById('toast');
   t.textContent=msg; t.classList.add('show');
@@ -593,16 +598,23 @@ function joinEvent() {
 }
 
 // ===== CREATE EVENT =====
-async function createEvent() {
+async function doCreateEvent() {
   const name = document.getElementById('event-name').value.trim();
   const desc = document.getElementById('event-desc').value.trim();
   const errEl = document.getElementById('event-name-error');
-  if (!name) { errEl.style.display = 'block'; return; }
+  if (!name) { errEl.textContent = 'Skriv inn et navn'; errEl.style.display = 'block'; return; }
   errEl.style.display = 'none';
   const btn = document.getElementById('create-event-btn');
   btn.disabled = true; btn.textContent = 'Oppretter…';
   const id = uuid();
-  await db.ref('events/'+id+'/meta').set({ name, desc, created: Date.now() });
+  try {
+    await db.ref('events/'+id+'/meta').set({ name, desc, created: Date.now() });
+  } catch (err) {
+    errEl.textContent = 'Kunne ikke opprette event. Sjekk nettforbindelsen og prøv igjen.';
+    errEl.style.display = 'block';
+    btn.disabled = false; btn.textContent = 'Opprett event';
+    return;
+  }
   window.location.href = window.location.pathname + '?e=' + id;
 }
 
@@ -743,7 +755,13 @@ function backToEvent() {
 }
 
 function tPush() {
-  if (tRef) tRef.set(tState).catch(()=>setSyncStatus('offline'));
+  if (!tRef) return;
+  try {
+    tRef.set(tState).catch(()=>setSyncStatus('offline'));
+  } catch (err) {
+    setSyncStatus('offline');
+    showToast('Kunne ikke lagre — prøv igjen');
+  }
 }
 
 function setSyncStatus(s) {
@@ -811,15 +829,28 @@ function roundRobin(g) {
   for(let i=0;i<g.length-1;i++) for(let j=i+1;j<g.length;j++) f.push([g[i],g[j]]);
   return scheduledFixtures(f);
 }
+// Sprer kampene: ingen skal spille flere kamper rett etter hverandre, og alle
+// skal ha omtrent like lang pause. Velger hele tiden kampen der begge spillerne
+// har hvilt lengst — likt resultat avgjøres av hvem som har spilt minst.
 function scheduledFixtures(fixtures) {
-  const remaining=[...fixtures]; const scheduled=[]; let last=new Set();
-  while(remaining.length) {
-    const best=remaining.reduce((a,b)=>{
-      const sa=new Set(a).size===2&&[...new Set(a)].every(p=>last.has(p))?2:[...new Set(a)].filter(p=>last.has(p)).length;
-      const sb=new Set(b).size===2&&[...new Set(b)].every(p=>last.has(p))?2:[...new Set(b)].filter(p=>last.has(p)).length;
-      return sa<=sb?a:b;
+  const remaining = shuffle(fixtures);
+  const scheduled = [];
+  const lastSeen = {}, played = {};
+  while (remaining.length) {
+    const slot = scheduled.length;
+    let bestIdx = 0, bestRest = -1, bestLoad = 0;
+    remaining.forEach((f, i) => {
+      const rest = Math.min(slot - (lastSeen[f[0]] ?? -99), slot - (lastSeen[f[1]] ?? -99));
+      const load = (played[f[0]] || 0) + (played[f[1]] || 0);
+      if (rest > bestRest || (rest === bestRest && load < bestLoad)) {
+        bestIdx = i; bestRest = rest; bestLoad = load;
+      }
     });
-    scheduled.push(best); last=new Set(best); remaining.splice(remaining.indexOf(best),1);
+    const f = remaining.splice(bestIdx, 1)[0];
+    scheduled.push(f);
+    lastSeen[f[0]] = lastSeen[f[1]] = slot;
+    played[f[0]] = (played[f[0]] || 0) + 1;
+    played[f[1]] = (played[f[1]] || 0) + 1;
   }
   return scheduled;
 }
@@ -844,13 +875,40 @@ function resetTournament() {
 }
 
 // ===== STANDINGS =====
-function fkey(f){return f[0]+'|||'+f[1];}
+// Firebase-nøkler kan ikke inneholde . # $ / [ ] — spillernavn som "Ola N." må derfor escapes
+function safeKey(s){ return String(s).replace(/[.#$/[\]]/g, c => '~'+c.charCodeAt(0).toString(16)); }
+function fkey(f){return safeKey(f[0])+'|||'+safeKey(f[1]);}
 
-function calcStandings(group, results) {
+// Kampene i den rekkefølgen de faktisk spilles: A1, B1, A2, B2 ... Gruppene går parallelt.
+function playOrder(t) {
+  const fa=t.fixturesA||[], fb=t.fixturesB||[], order=[];
+  for(let i=0;i<Math.max(fa.length,fb.length);i++) {
+    if(fa[i]) order.push({grp:'a',idx:i,f:fa[i]});
+    if(fb[i]) order.push({grp:'b',idx:i,f:fb[i]});
+  }
+  return order;
+}
+function matchResult(t, m) {
+  const results = m.grp==='a' ? (t.resultsA||{}) : (t.resultsB||{});
+  return results[fkey(m.f)] || null;
+}
+function isPlayed(t, m) { const r=matchResult(t,m); return !!(r&&r.winner); }
+function lastPlayed(t) {
+  const played = playOrder(t).filter(m=>isPlayed(t,m)).map(m=>({...m,r:matchResult(t,m)}));
+  if(!played.length) return null;
+  // Nyeste tidsstempel vinner. Resultater lagret før ts fantes har 0 og faller
+  // dermed tilbake på spillerekkefølgen, som er nærmeste tilgjengelige sannhet.
+  return played.reduce((a,b)=>(b.r.ts||0)>=(a.r.ts||0)?b:a);
+}
+function nextUp(t) { return playOrder(t).find(m=>!isPlayed(t,m)) || null; }
+
+function calcStandings(group, results, mode) {
+  mode = mode || tState.mode;
   const s={};
   group.forEach(p=>{s[p]={p:0,w:0,d:0,l:0,pts:0,gf:0,ga:0,gd:0};});
   Object.values(results).forEach(r=>{
     if(!r.winner) return;
+    if(!s[r.home]||!s[r.away]) return; // resultat fra en spiller som ikke er i gruppa lenger
     s[r.home].p++; s[r.away].p++;
     if(typeof r.homeScore==='number'&&typeof r.awayScore==='number') {
       s[r.home].gf+=r.homeScore; s[r.home].ga+=r.awayScore;
@@ -874,7 +932,7 @@ function calcStandings(group, results) {
     const sa=s[a],sb=s[b];
     if(sb.pts!==sa.pts) return sb.pts-sa.pts;
     if(sb.w!==sa.w) return sb.w-sa.w;
-    if(tState.mode==='score') { if(sb.gd!==sa.gd) return sb.gd-sa.gd; if(sb.gf!==sa.gf) return sb.gf-sa.gf; }
+    if(mode==='score') { if(sb.gd!==sa.gd) return sb.gd-sa.gd; if(sb.gf!==sa.gf) return sb.gf-sa.gf; }
     const h=h2h(b,a)-h2h(a,b); if(h) return h;
     if(sa.l!==sb.l) return sa.l-sb.l;
     return Math.random()-0.5;
@@ -936,6 +994,7 @@ function renderTournamentView() {
   // Standings
   const sWrap = document.getElementById('t-standings-wrap');
   const showGD = tState.mode==='score';
+  const showD = tState.mode==='wdl';
   sWrap.innerHTML = ['a','b'].map(grp=>{
     const group = grp==='a'?tState.groupA:tState.groupB;
     const results = grp==='a'?tState.resultsA:tState.resultsB;
@@ -945,7 +1004,7 @@ function renderTournamentView() {
       <table class="stand-table">
         <thead><tr>
           <th style="width:28px;">#</th><th class="name">Spiller</th>
-          <th>K</th><th>S</th>${showGD?'':'<th>U</th>'}<th>T</th>
+          <th>K</th><th>S</th>${showD?'<th>U</th>':''}<th>T</th>
           ${showGD?'<th>M+/-</th>':''}
           <th>Pkt</th>
         </tr></thead>
@@ -955,7 +1014,7 @@ function renderTournamentView() {
           return `<tr>
             <td><span class="pos ${pc}">${r.pos}</span></td>
             <td class="name">${escapeHTML(r.name)}</td>
-            <td>${r.p}</td><td>${r.w}</td>${showGD?'':`<td>${r.d}</td>`}<td>${r.l}</td>
+            <td>${r.p}</td><td>${r.w}</td>${showD?`<td>${r.d}</td>`:''}<td>${r.l}</td>
             ${showGD?`<td>${gdStr}</td>`:''}
             <td style="font-weight:700;">${r.pts}</td>
           </tr>`;
@@ -969,9 +1028,12 @@ function renderTournamentView() {
   const sB = calcStandings(tState.groupB||[], tState.resultsB||{});
   const pr = tState.playoffResults||{};
   const size = Math.min(sA.length, sB.length);
-  const champion = (pr['match_0']||{}).winner;
-  const third    = (pr['match_1']||{}).winner;
-  const runnerUp = (pr['match_0']||{}).loser;
+  // playoffResults lagrer vinnersiden ('a'/'b'), på samme form som gruppespillet
+  const poName = (i, side) => side==='a' ? (sA[i]||{}).name : side==='b' ? (sB[i]||{}).name : undefined;
+  const fin = pr['match_0']||{}, bronze = pr['match_1']||{};
+  const champion = poName(0, fin.winner);
+  const runnerUp = fin.winner==='a' ? poName(0,'b') : fin.winner==='b' ? poName(0,'a') : undefined;
+  const third    = poName(1, bronze.winner);
 
   const winnerSection = document.getElementById('t-winner-section');
   if (champion) {
@@ -990,18 +1052,19 @@ function renderTournamentView() {
   } else { winnerSection.innerHTML = ''; }
 
   document.getElementById('t-playoff-matches').innerHTML = Array.from({length:size},(_,i)=>{
-    const label=i===0?'FINALE':i===1?'3. PLASS':`${ordinal(i+1)} PLASS`;
-    const pA=sA[i]?sA[i].name:`A ${ordinal(i+1)}`;
-    const pB=sB[i]?sB[i].name:`B ${ordinal(i+1)}`;
+    // Kamp i spiller om plass 2i+1 og 2i+2: 0=finale, 1=3. plass, 2=5. plass osv.
+    const label=i===0?'FINALE':`${2*i+1}. PLASS`;
+    const pA=sA[i]?sA[i].name:`A${i+1}`;
+    const pB=sB[i]?sB[i].name:`B${i+1}`;
     const r=pr['match_'+i]||{};
     let badge='';
     if(tState.mode==='score'&&typeof r.homeScore==='number'&&typeof r.awayScore==='number') {
-      const cls=r.winner===pA?'res-a':r.winner===pB?'res-b':'res-d';
+      const cls=r.winner==='a'?'res-a':r.winner==='b'?'res-b':'res-d';
       badge=`<span class="fix-badge ${cls}">${r.homeScore}–${r.awayScore}</span>`;
-    } else if(r.winner===pA) badge=`<span class="fix-badge res-a">${escapeHTML(pA)} vinner</span>`;
-    else if(r.winner===pB) badge=`<span class="fix-badge res-b">${escapeHTML(pB)} vinner</span>`;
+    } else if(r.winner==='a') badge=`<span class="fix-badge res-a">${escapeHTML(pA)} vinner</span>`;
+    else if(r.winner==='b') badge=`<span class="fix-badge res-b">${escapeHTML(pB)} vinner</span>`;
     else badge=`<span class="fix-badge res-none">Trykk for å registrere</span>`;
-    return `<div class="playoff-card" onclick="openPlayoffDialog(${i},'${escapeHTML(pA).replace(/'/g,"\\'")}','${escapeHTML(pB).replace(/'/g,"\\'")}')">
+    return `<div class="playoff-card" onclick="openPlayoffDialog(${i})">
       <div class="playoff-label ${i===0?'final':''}">${label}</div>
       <div class="fixture-row" style="border:none;padding:0;pointer-events:none;cursor:default;">
         <span class="fix-team r" style="font-size:17px;font-weight:700;">${escapeHTML(pA)}</span>
@@ -1031,15 +1094,19 @@ function openMatchDialog(grp, idx) {
       const res = grp==='a'?tState.resultsA:tState.resultsB;
       const key = fkey(f);
       if (winner===null) { delete res[key]; }
-      else { res[key]={winner,loser,home:f[0],away:f[1],homeScore:hs,awayScore:as_}; }
+      else { res[key]={winner,loser,home:f[0],away:f[1],homeScore:hs,awayScore:as_,ts:Date.now()}; }
       tPush();
     },
     r, scoreH, scoreA, hasScore
   );
 }
 
-function openPlayoffDialog(idx, pA, pB) {
+function openPlayoffDialog(idx) {
   if (!tState.playoffResults) tState.playoffResults={};
+  const sA = calcStandings(tState.groupA||[], tState.resultsA||{});
+  const sB = calcStandings(tState.groupB||[], tState.resultsB||{});
+  const pA = sA[idx] ? sA[idx].name : `A${idx+1}`;
+  const pB = sB[idx] ? sB[idx].name : `B${idx+1}`;
   const r = tState.playoffResults['match_'+idx]||{};
   let scoreH = typeof r.homeScore==='number'?r.homeScore:0;
   let scoreA = typeof r.awayScore==='number'?r.awayScore:0;
@@ -1049,7 +1116,7 @@ function openPlayoffDialog(idx, pA, pB) {
     (winner, loser, hs, as_) => {
       const key = 'match_'+idx;
       if (winner===null) { delete tState.playoffResults[key]; }
-      else { tState.playoffResults[key]={winner,loser,homeScore:hs,awayScore:as_}; }
+      else { tState.playoffResults[key]={winner,loser,homeScore:hs,awayScore:as_,ts:Date.now()}; }
       tPush();
     },
     r, scoreH, scoreA, hasScore
@@ -1151,7 +1218,6 @@ function showMatchDialog(p1, p2, mode, onResult, r, scoreH, scoreA, hasScore) {
   };
 
   window.dlgSetWinner = function(side) {
-    const winner=side==='a'?p1:side==='b'?p2:'draw';
     const loser=side==='a'?p2:side==='b'?p1:null;
     onResult(side==='draw'?'draw':side, loser, null, null);
     closeDlg();
@@ -1167,7 +1233,6 @@ let displayIntervals = [];
 let dispEventId = null;
 let dispTournaments = {};
 let dispCurrent = 0;
-let dispView = 0; // 0=standings, 1=fixtures
 let dispRef = null;
 
 function openDisplayScreen() {
@@ -1200,16 +1265,14 @@ async function loadDisplayScreen(eventId) {
 }
 
 function startDisplayRotation() {
-  const STAY = 8000; // 8s per view
+  const STAY = 12000; // 12s per turnering
   displayIntervals.push(setInterval(()=>{
     const tList = Object.entries(dispTournaments);
-    if (!tList.length) return;
-    dispView++;
-    if (dispView >= 2) { dispView=0; dispCurrent=(dispCurrent+1)%tList.length; }
+    if (tList.length < 2) return; // én turnering: ingenting å rullere mellom
+    dispCurrent = (dispCurrent+1)%tList.length;
     renderDisplay();
     animateProgressBar(STAY);
   }, STAY));
-  animateProgressBar(STAY);
 }
 
 function animateProgressBar(duration) {
@@ -1235,84 +1298,98 @@ function renderDisplay() {
     `<div class="display-dot ${i===dispCurrent?'active':''}"></div>`
   ).join('');
 
-  if (dispView===0) renderDisplayStandings(t);
-  else renderDisplayFixtures(t);
+  document.getElementById('disp-content').innerHTML = `
+    <div class="display-main">
+      <div class="display-col">
+        <div class="display-section-title">Tabell</div>
+        ${renderDisplayTables(t)}
+      </div>
+      <div class="display-col">${renderDisplaySide(t)}</div>
+    </div>`;
 }
 
-function renderDisplayStandings(t) {
+function renderDisplayTables(t) {
   const showGD = t.mode==='score';
-  const content = document.getElementById('disp-content');
-  content.innerHTML = `
-    <div class="display-section-title">TABELL</div>
-    <div class="display-grid">
-      ${['a','b'].map(grp=>{
-        const group=grp==='a'?t.groupA:t.groupB;
-        const results=grp==='a'?t.resultsA:t.resultsB;
-        if(!(group||[]).length) return '';
-        // temporarily set tState for calcStandings
-        const origMode=tState.mode; tState.mode=t.mode;
-        const origGA=tState.groupA; tState.groupA=t.groupA;
-        const origRA=tState.resultsA; tState.resultsA=t.resultsA;
-        const origGB=tState.groupB; tState.groupB=t.groupB;
-        const origRB=tState.resultsB; tState.resultsB=t.resultsB;
-        const rows=calcStandings(group||[], results||{});
-        tState.mode=origMode; tState.groupA=origGA; tState.resultsA=origRA; tState.groupB=origGB; tState.resultsB=origRB;
-        return `<div>
-          <div class="display-group-title">Gruppe ${grp.toUpperCase()}</div>
-          <table class="display-table">
-            <thead><tr>
-              <th style="width:30px;">#</th><th class="name">Spiller</th>
-              <th>K</th><th>S</th>${showGD?'':'<th>U</th>'}<th>T</th>${showGD?'<th>M+/-</th>':''}
-              <th>Pkt</th>
-            </tr></thead>
-            <tbody>${rows.map(r=>{
-              const pc=r.pos===1?'p1':r.pos===2?'p2':r.pos===3?'p3':'px';
-              const gdStr=r.gd>0?'+'+r.gd:r.gd;
-              return `<tr>
-                <td><span class="display-pos ${pc}">${r.pos}</span></td>
-                <td class="name">${escapeHTML(r.name)}</td>
-                <td>${r.p}</td><td>${r.w}</td>${showGD?'':`<td>${r.d}</td>`}<td>${r.l}</td>
-                ${showGD?`<td>${gdStr}</td>`:''}
-                <td style="font-weight:700;">${r.pts}</td>
-              </tr>`;
-            }).join('')}</tbody>
-          </table>
-        </div>`;
-      }).join('')}
-    </div>`;
+  const showD = t.mode==='wdl';
+  return `<div class="display-grid">
+    ${['a','b'].map(grp=>{
+      const group=grp==='a'?t.groupA:t.groupB;
+      const results=grp==='a'?t.resultsA:t.resultsB;
+      if(!(group||[]).length) return '';
+      const rows=calcStandings(group||[], results||{}, t.mode);
+      return `<div>
+        <div class="display-group-title">Gruppe ${grp.toUpperCase()}</div>
+        <table class="display-table">
+          <thead><tr>
+            <th style="width:30px;">#</th><th class="name">Spiller</th>
+            <th>K</th><th>S</th>${showD?'<th>U</th>':''}<th>T</th>${showGD?'<th>M+/-</th>':''}
+            <th>Pkt</th>
+          </tr></thead>
+          <tbody>${rows.map(r=>{
+            const pc=r.pos===1?'p1':r.pos===2?'p2':r.pos===3?'p3':'px';
+            const gdStr=r.gd>0?'+'+r.gd:r.gd;
+            return `<tr>
+              <td><span class="display-pos ${pc}">${r.pos}</span></td>
+              <td class="name">${escapeHTML(r.name)}</td>
+              <td>${r.p}</td><td>${r.w}</td>${showD?`<td>${r.d}</td>`:''}<td>${r.l}</td>
+              ${showGD?`<td>${gdStr}</td>`:''}
+              <td style="font-weight:700;">${r.pts}</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+      </div>`;
+    }).join('')}
+  </div>`;
 }
 
-function renderDisplayFixtures(t) {
-  const content = document.getElementById('disp-content');
-  content.innerHTML = `
-    <div class="display-section-title">KAMPER</div>
-    <div class="display-grid">
-      ${['a','b'].map(grp=>{
-        const fixtures=(grp==='a'?t.fixturesA:t.fixturesB)||[];
-        const results=(grp==='a'?t.resultsA:t.resultsB)||{};
-        if(!fixtures.length) return '';
-        return `<div>
-          <div class="display-group-title">Gruppe ${grp.toUpperCase()}</div>
-          ${fixtures.map((f,i)=>{
-            const r=results[fkey(f)]||{};
-            let badge='';
-            if(t.mode==='score'&&typeof r.homeScore==='number'&&typeof r.awayScore==='number') {
-              const cls=r.winner==='a'?'res-a':r.winner==='b'?'res-b':'res-d';
-              badge=`<span class="display-fix-badge ${cls}">${r.homeScore}–${r.awayScore}</span>`;
-            } else if(r.winner==='a') badge=`<span class="display-fix-badge res-a">${escapeHTML(f[0])}</span>`;
-            else if(r.winner==='b') badge=`<span class="display-fix-badge res-b">${escapeHTML(f[1])}</span>`;
-            else badge=`<span class="display-fix-badge res-none">—</span>`;
-            return `<div class="display-fixture">
-              <span class="display-fix-team r">${escapeHTML(f[0])}</span>
-              <span class="display-fix-vs">vs</span>
-              <span class="display-fix-team">${escapeHTML(f[1])}</span>
-              ${badge}
-            </div>`;
-          }).join('')}
-        </div>`;
-      }).join('')}
-    </div>`;
+// Høyre kolonne: siste resultat, og køen slik at folk ser når de selv skal spille
+const DISP_QUEUE_MAX = 6;
+function renderDisplaySide(t) {
+  const order = playOrder(t);
+  if (!order.length) return `<div class="display-card">
+    <div class="display-card-label">Neste kamper</div>
+    <div class="display-result-line" style="opacity:0.3;">Ikke satt opp ennå</div>
+  </div>`;
+
+  const last = lastPlayed(t);
+  const queue = order.filter(m=>!isPlayed(t,m));
+
+  const lastCard = `<div class="display-card">
+    <div class="display-card-label">Siste resultat</div>
+    ${last
+      ? `<div class="display-result-line">${displayMatchLine(t,last.f,last.r)}</div>
+         <div class="display-card-sub">Gruppe ${last.grp.toUpperCase()} · ${order.length-queue.length} av ${order.length} spilt</div>`
+      : `<div class="display-result-line" style="opacity:0.3;">—</div>
+         <div class="display-card-sub">Ingen kamper spilt ennå</div>`}
+  </div>`;
+
+  const queueCard = `<div class="display-card next">
+    <div class="display-card-label">${queue.length?'Neste kamper':'Ferdig'}</div>
+    ${queue.length
+      ? queue.slice(0,DISP_QUEUE_MAX).map((m,i)=>`
+          <div class="display-queue-item${i===0?' up-next':''}">
+            <span class="display-queue-num">${i===0?'▶':i+1}</span>
+            <span class="display-queue-teams">${escapeHTML(m.f[0])}<span class="display-vs">vs</span>${escapeHTML(m.f[1])}</span>
+            <span class="display-queue-grp ${m.grp}">${m.grp.toUpperCase()}</span>
+          </div>`).join('')
+        + (queue.length>DISP_QUEUE_MAX
+            ? `<div class="display-card-sub">+ ${queue.length-DISP_QUEUE_MAX} kamper etter dette</div>` : '')
+      : `<div class="display-result-line">🏁 Alle kamper spilt</div>
+         <div class="display-card-sub">${order.length} av ${order.length} ferdig</div>`}
+  </div>`;
+
+  return lastCard + queueCard;
 }
+
+function displayMatchLine(t, f, r) {
+  if (t.mode==='score' && typeof r.homeScore==='number' && typeof r.awayScore==='number')
+    return `${escapeHTML(f[0])}<span class="display-score">${r.homeScore}–${r.awayScore}</span>${escapeHTML(f[1])}`;
+  if (r.winner==='draw')
+    return `${escapeHTML(f[0])}<span class="display-vs">uavgjort</span>${escapeHTML(f[1])}`;
+  const w = r.winner==='a'?f[0]:f[1], l = r.winner==='a'?f[1]:f[0];
+  return `${escapeHTML(w)}<span class="display-vs">slo</span>${escapeHTML(l)}`;
+}
+
 </script>
 </body>
 </html>
