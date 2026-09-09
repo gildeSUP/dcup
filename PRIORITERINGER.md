@@ -25,14 +25,16 @@ så en tom database ikke kan fylles opp.
 
 ## P1 — reelle hull
 
-### 6. Playoff-resultater lagrer side, ikke navn
-**Planlagt:** løses i steg 3 i `PLAN-GRUPPER.md`.
+### 6. ✅ Fikset i `4bffb0c` (Steg 3)
+`openPlayoffDialog` lagrer nå `home`/`away` som navn på playoff-resultatet,
+og `podium()`/`playoffMatches()` leser de lagrede navnene via
+`playoffWinner`/`playoffLoser` i stedet for å regne finalisten ut på nytt fra
+gjeldende tabell.
 
-`dcup.js:1254` lagrer `{winner:'a'|'b'}` uten `home`/`away`. Gruppekampene
-lagrer navnene (`dcup.js:1233`). Endrer noen et gruppekampresultat etter at
-finalen er spilt, endres tabellen — og dermed hvem `podium()` mener vant
-(`dcup.js:866`). Vinneren kan bytte person i etterkant. Lagre navnene, slik
-gruppekampene gjør.
+**Verifisert i egen økt:** spilte en finale (mester = spiller X), endret
+deretter et gruppekampresultat slik at en annen spiller (Y) overtok
+tabelltoppen i gruppa. `podium()` viste fortsatt X som mester, og
+finale-oppsettet viste fortsatt «X mot [motstander]» — ikke det nye Y.
 
 ### 7. Turneringslista har vilkårlig rekkefølge
 `dcup.js:308` itererer `Object.entries(tournaments)`. Nøklene er UUID-er, så
@@ -162,10 +164,9 @@ klikk.
 
 ---
 
-## Ucommittet i arbeidstreet
+## Resize-lytter på liveskjermen — ✅ verifisert i `da767a6`
 
-`dcup.js` har én ucommittet endring: **resize-lytter på liveskjermen.**
-`dispPerPage` ble bare invalidert av `groupShapeKey` (turnering og
+`dispPerPage` ble tidligere bare invalidert av `groupShapeKey` (turnering og
 spillerantall), ikke av viewporten. Går skjermen til fullskjerm fortsatte den å
 bla selv om alt fikk plass; motsatt vei sa målingen «alle får plass» og
 `.display-col { overflow:hidden }` klippet bort gruppe C og D uten feilmelding.
@@ -174,7 +175,10 @@ Lytteren er debounced med 250ms — `resize` fyrer per frame under en vindusdrag
 og `measurePerPage` tvinger layout opptil én gang per gruppe. Den er også
 guardet på at display-skjermen faktisk er aktiv.
 
-**Ikke verifisert i nettleser.** `events` ble wipet før jeg fikk testet, så
-testdataene forsvant. Trenger en turnering med fire grupper à fem spillere
-(20 deltakere), målt på 1280×720 der den skal gi 2 per side, og deretter et
-høyere vindu der den skal måle på nytt til 4 per side.
+**Verifisert i egen økt** med akkurat den foreslåtte testen: turnering med
+fire grupper à fem spillere (20 deltakere). På 1280×720 målte den 2 grupper
+per side («side 1 av 2», så «side 2 av 2» ved neste rotasjon). Endret vinduet
+til 1280×1400 → målte om til alle fire på én side, ingen sidetelling. Endret
+tilbake til 1280×600 → målte korrekt ned til 2 per side igjen, altså
+re-måling begge veier, ikke bare ved første last. `scrollHeight` var lik
+`clientHeight` ved endelig størrelse — ingen usynlig avklipt gruppe.
