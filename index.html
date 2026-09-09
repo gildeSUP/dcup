@@ -297,6 +297,8 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 .board-score { width: 78px; padding: 8px 6px; text-align: center; font-weight: 700; font-size: 16px; }
 .board-del { background: none; border: none; color: var(--text3); font-size: 17px; line-height: 1; padding: 0 2px; cursor: pointer; }
 .board-del:hover { color: var(--red); }
+.board-edit { background: none; border: none; color: var(--text3); font-size: 15px; line-height: 1; padding: 0 4px; cursor: pointer; }
+.board-edit:hover { color: var(--accent); }
 .input-row { display: flex; gap: 8px; margin-bottom: 0.5rem; }
 .input-row input { flex: 1; }
 .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
@@ -957,6 +959,7 @@ function renderPeopleList() {
         <span class="join-name-txt">${escapeHTML(p.name)}</span>
         <span class="join-sub">${sports.length ? sports.join(' ') : 'Ingen turneringer ennå'}</span>
       </span>
+      <button class="board-edit" title="Rediger navn" onclick="renamePerson('${key}')">✏️</button>
       <button class="board-del" title="Fjern deltaker" onclick="removePerson('${key}')">×</button>
     </label>`;
   }).join('');
@@ -982,6 +985,84 @@ async function removePerson(key) {
     renderPeopleList();
   } catch (err) {
     showToast('Kunne ikke fjerne — prøv igjen');
+  }
+}
+
+// Bytter ut ett navn med et annet overalt det forekommer i en turnering:
+// spillerliste, grupper, kamper, resultater (som har navnet i selve nøkkelen
+// via fkey) og poengtavle-scorer (som har navnet som Firebase-nøkkel). En
+// omdøping berører altså mange sammenhengende felt på én gang, så den går
+// via en transaksjon på hele turneringsdokumentet i stedet for enkeltfelt.
+function renameInTournament(t, oldName, newName) {
+  const swap = n => n === oldName ? newName : n;
+  const swapFixtures = arr => Array.isArray(arr) ? arr.map(f => [swap(f[0]), swap(f[1])]) : arr;
+  const swapResults = results => {
+    if (!results) return results;
+    const out = {};
+    Object.entries(results).forEach(([, r]) => {
+      const renamed = { ...r, home: swap(r.home), away: swap(r.away), loser: r.loser ? swap(r.loser) : r.loser };
+      out[fkey([renamed.home, renamed.away])] = renamed;
+    });
+    return out;
+  };
+  const next = { ...t };
+  if (Array.isArray(t.players)) next.players = t.players.map(swap);
+  if (Array.isArray(t.groupA)) next.groupA = t.groupA.map(swap);
+  if (Array.isArray(t.groupB)) next.groupB = t.groupB.map(swap);
+  next.fixturesA = swapFixtures(t.fixturesA);
+  next.fixturesB = swapFixtures(t.fixturesB);
+  next.resultsA = swapResults(t.resultsA);
+  next.resultsB = swapResults(t.resultsB);
+  if (t.playoffResults) {
+    const out = {};
+    Object.entries(t.playoffResults).forEach(([k, r]) => {
+      out[k] = { ...r, loser: r.loser ? swap(r.loser) : r.loser };
+    });
+    next.playoffResults = out;
+  }
+  if (t.scores) {
+    const out = {};
+    Object.entries(t.scores).forEach(([key, s]) => {
+      const renamedKey = s.name === oldName ? safeKey(newName) : key;
+      out[renamedKey] = s.name === oldName ? { ...s, name: newName } : s;
+    });
+    next.scores = out;
+  }
+  return next;
+}
+
+async function renamePerson(oldKey) {
+  const p = eventPeople[oldKey];
+  if (!p) return;
+  const input = prompt('Nytt navn:', p.name);
+  if (input === null) return;
+  const newName = input.trim();
+  if (!newName || newName === p.name) return;
+  if (Object.values(eventPeople).some(x => x.name === newName)) {
+    showToast('Navnet er allerede i bruk');
+    return;
+  }
+  const newKey = safeKey(newName);
+  const peopleUpdates = {};
+  peopleUpdates['events/'+currentEventId+'/people/'+oldKey] = null;
+  peopleUpdates['events/'+currentEventId+'/people/'+newKey] = { name: newName, joined: p.joined || Date.now() };
+
+  const affectedTids = Object.entries(tournaments)
+    .filter(([, t]) => (t.players||[]).includes(p.name))
+    .map(([tid]) => tid);
+
+  try {
+    await db.ref().update(peopleUpdates);
+    for (const tid of affectedTids) {
+      await db.ref('events/'+currentEventId+'/tournaments/'+tid).transaction(current => {
+        if (!current) return current;
+        return renameInTournament(current, p.name, newName);
+      });
+    }
+    showToast('Navn oppdatert');
+    renderPeopleList();
+  } catch (err) {
+    showToast('Kunne ikke oppdatere navn — prøv igjen');
   }
 }
 
