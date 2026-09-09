@@ -305,6 +305,8 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 /* ===== TOAST ===== */
 .toast { position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); font-size: 13px; font-weight: 500; padding: 8px 16px; border-radius: 20px; opacity: 0; transition: opacity 0.2s; pointer-events: none; white-space: nowrap; z-index: 99999; }
 .toast.show { opacity: 1; }
+/* P2 #32: et bunnark dekker sonen nederst der toasten normalt ligger. */
+.toast.toast-top { bottom: auto; top: 1.5rem; }
 
 /* ===== MISC ===== */
 .row { display: flex; gap: 8px; align-items: center; }

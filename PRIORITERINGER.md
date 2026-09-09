@@ -108,7 +108,7 @@ for noe som ikke ble lagret. Nytt forsøk uten feil lykkes. Tre raske klikk på
 | 14 | ✅ Fikset. `setSyncStatus(status, where)` — `'event'` treffer `#sync-dot`, ellers turneringens. `loadEvent` setter «Kobler…» før lytteren, «Live» ved hvert snapshot og «Frakoblet» i error-callbacken. Begge prikkene starter gule i markupen i stedet for å love «Live» før noe er koblet opp | `index.html`, `dcup.js` |
 | 15 | ✅ Fikset. `openTournament` setter `.value = ''` i stedet | `dcup.js` |
 | 16 | ✅ Fikset. `t-board-input` har fått samme `keydown`-lytter som `t-player-input` | `dcup.js` |
-| 17 | «Ferdig»-merket settes når gruppespillet er ferdig, før finalen er spilt | `dcup.js:843`, `332` |
+| 17 | ✅ Fikset. `isFinished` krever nå at finalen (`playoffResults.match_0`) er spilt når turneringen har flere grupper. Plasseringskampene teller ikke med — de hoppes ofte over, og da ville merket aldri kommet | `dcup.js` |
 | 18 | ✅ Fikset. `requestWakeLock()` ved åpning, `releaseWakeLock()` i `exitDisplay`, og ny forespørsel på `visibilitychange` (låsen slippes automatisk når fanen skjules). Alt i try/catch og bak en `'wakeLock' in navigator`-sjekk — uten støtte oppfører liveskjermen seg nøyaktig som før | `dcup.js` |
 | 19 | ✅ Fikset. `index.html` sjekker `firebase` **og** `firebase.database` før `dcup.js` i det hele tatt injiseres, og viser en forklarende side med «Prøv igjen» i stedet. Verifisert med CDN-en blokkert, med bare app-compat lastet, og normalt | `index.html` |
 | 20 | ✅ Fikset. `<meta name="robots" content="noindex, nofollow">` | `index.html` |
@@ -216,12 +216,15 @@ liveskjermen slutter å bla. Med ekte Firebase fyrer callbacken asynkront og
 rekker det ikke — men det er tilfeldig, ikke garantert. Fiks derfor CSS-en og
 målingen sammen: ikke cache et resultat målt på `clientHeight === 0`.
 
-### 32. Toasten legger seg oppå knappene i et bunnark på mobil
+### 32. ✅ Fikset
 
-`.toast` er `position:fixed; bottom:1.5rem`, og et bunnark dekker akkurat den
-sonen. «1 gruppe · 6 kamper» havnet midt oppå Lagre-knappen i påmeldingsarket.
-Ikke ny — den har alltid ligget der — men synlig så snart en toast vises mens en
-dialog er åpen. Løfte toasten når en dialog er åpen, eller vise den øverst.
+`showToast` sjekker om en av de fem dialogene er åpen (`anyDialogOpen()`) og
+setter i så fall klassen `toast-top`, som flytter toasten til `top: 1.5rem`.
+Uten dialog ligger den nederst som før.
+
+**Verifisert** på 390px: med startdialogen åpen lå toasten 24px fra toppen og
+overlappet null av de fem synlige knappene i arket — før lå «1 gruppe · 6
+kamper» midt oppå Start-knappen. Uten dialog lå den 24px fra bunnen som før.
 
 ### 31. ✅ Fikset — men bare i «meld på»
 

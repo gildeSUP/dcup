@@ -19,9 +19,22 @@ function escapeHTML(s) {
 function uuid() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return(c==='x'?r:(r&0x3|0x8)).toString(16);});
 }
+// P2 #32: toasten ligger nederst, akkurat der et bunnark har knappene sine —
+// «1 gruppe · 6 kamper» la seg oppå Lagre. Er en dialog åpen, vises den øverst
+// i stedet.
+function anyDialogOpen() {
+  const ids = ['join-overlay','people-overlay','add-tournament-overlay','start-tournament-overlay'];
+  if (ids.some(id => {
+    const el = document.getElementById(id);
+    return el && el.style.display !== 'none' && el.style.display !== '';
+  })) return true;
+  return !!document.querySelector('.match-dialog-overlay');
+}
 function showToast(msg) {
   const t=document.getElementById('toast');
-  t.textContent=msg; t.classList.add('show');
+  t.textContent=msg;
+  t.classList.toggle('toast-top', anyDialogOpen());
+  t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'),2200);
 }
 // Bunn-modalene har sin egen scroll (overflow-y:auto) for langt innhold —
@@ -1085,7 +1098,16 @@ function isFinished(t) {
   }
   const order = playOrder(t);
   if (!order.length) return false;
-  return order.every(m => isPlayed(t, m));
+  if (!order.every(m => isPlayed(t, m))) return false;
+  // P2 #17: med flere grupper er gruppespillet bare halve turneringen —
+  // «Ferdig» skal ikke stå på en turnering der finalen ikke er spilt.
+  // Plasseringskampene teller ikke med: de hoppes ofte over, og da ville
+  // merket aldri kommet. Finalen har alltid nøkkelen match_0.
+  if (groupsOf(t).length > 1) {
+    const final = (t.playoffResults || {})['match_0'];
+    if (!final || !final.winner) return false;
+  }
+  return true;
 }
 
 // ===== SLUTTSPILL =====

@@ -338,6 +338,20 @@ eq('gruppespill sperres når det er startet', isSignupLocked(t3), true);
 eq('ferdig når alle kamper er spilt', isFinished(oneGroup), true);
 eq('ikke ferdig med uspilte kamper', isFinished(t3), false);
 
+// P2 #17: med flere grupper er gruppespillet bare halve turneringen.
+const twoGroupsPlayed = { mode:'wl', groups:[
+  { name:'A', players:['A','B'], fixtures:[['A','B']], results: res([['A','B',1,0]]) },
+  { name:'B', players:['C','D'], fixtures:[['C','D']], results: res([['C','D',1,0]]) },
+], playoffResults:{} };
+eq('to grupper: gruppespill ferdig, finale uspilt → ikke ferdig',
+   isFinished(twoGroupsPlayed), false);
+eq('to grupper: ferdig når finalen er spilt',
+   isFinished({ ...twoGroupsPlayed, playoffResults:{ match_0:{ winner:'a', home:'A', away:'C' } } }), true);
+eq('plasseringskamper kreves ikke — bare finalen',
+   isFinished({ ...twoGroupsPlayed,
+     playoffResults:{ match_0:{ winner:'a', home:'A', away:'C' }, match_1:{} } }), true);
+eq('én gruppe krever ingen finale', isFinished(oneGroup), true);
+
 // ---------- renameInTournament ----------
 section('renameInTournament');
 const before = { groups:[{ name:'A', players:['Ola N.','Per'], fixtures:[['Ola N.','Per']],
