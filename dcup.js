@@ -486,7 +486,13 @@ async function renamePerson(oldKey) {
   if (input === null) return;
   const newName = input.trim();
   if (!newName || newName === p.name) return;
-  if (Object.values(eventPeople).some(x => x.name === newName)) {
+  // Må sjekke turneringene også: addTPlayer og addBoardPlayer skriver bare til
+  // turneringens players, aldri til people. Et navn lagt til i oppsettet er
+  // usynlig for eventPeople, og en omdøping kunne dermed lage to like navn i
+  // samme gruppe — da kolliderer fkey og de to kampene deler resultatnøkkel.
+  const collides = Object.values(eventPeople).some(x => x.name === newName)
+    || Object.values(tournaments).some(t => tournamentHasName(t, newName));
+  if (collides) {
     showToast('Navnet er allerede i bruk');
     return;
   }
@@ -920,15 +926,19 @@ function renderStartDialog() {
       const ok = allowed.includes(g);
       const need = g * MIN_GROUP;
       return `<button type="button" class="mode-btn ${g===startChoice?'selected':''}"
-        ${ok?'':'disabled title="' + g + ' grupper krever minst ' + need + ' deltakere"'}
-        onclick="selectStartChoice(${g})">
+        ${ok?'':'disabled'} onclick="selectStartChoice(${g})">
         <span class="mode-btn-icon">${g}</span>
         <span class="mode-btn-label">${g===1?'gruppe':'grupper'}</span>
       </button>`;
     }).join('');
     const sizes = groupSizes(n, startChoice);
-    document.getElementById('start-detail').textContent =
-      `${sizes.join(' + ')} · ${matchCount(n, startChoice)} kamper`;
+    // Grunnen står som tekst, ikke i en title: hover finnes ikke på mobil, og
+    // en deaktivert knapp kan ikke trykkes for å avsløre den.
+    const blocked = ALLOWED_GROUPS.filter(g => !allowed.includes(g))
+      .map(g => `${g} grupper krever minst ${g * MIN_GROUP} deltakere`);
+    document.getElementById('start-detail').innerHTML =
+      `${sizes.join(' + ')} · ${matchCount(n, startChoice)} kamper`
+      + blocked.map(b => `<br><span style="opacity:0.7;">${b}</span>`).join('');
   }
 
   // En treergruppe uten uavgjort kan ende i en tresykel som ingen innbyrdes
@@ -940,7 +950,8 @@ function renderStartDialog() {
   if (small !== -1 && (tState.mode === 'wl' || tState.mode === 'wdl')) {
     warn.style.display = 'block';
     warn.textContent = `⚠️ Gruppe ${String.fromCharCode(65 + small)} får ${MIN_GROUP} spillere. `
-      + `Ved ${MODES[tState.mode].label} kan tre like resultater ikke skilles — da avgjør trekningen.`;
+      + `Ved ${MODES[tState.mode].label} kan tre like resultater ikke skilles sportslig — `
+      + `da avgjør alfabetisk rekkefølge.`;
   } else {
     warn.style.display = 'none';
   }
@@ -951,14 +962,14 @@ function confirmStartClicked() { confirmStart(startChoice); }
 async function confirmStart(g) {
   const btn = document.getElementById('start-confirm-btn');
   btn.disabled = true; btn.textContent = 'Starter…';
-  let rejected = null, made = null;
+  let rejectedPlayers = null, made = null, res;
   try {
-    await tRef.transaction(current => {
+    res = await tRef.transaction(current => {
       if (!current) return current;
       const players = current.players || [];
       // Avbryt bare når valget er blitt ulovlig, ikke fordi tallet har endret
       // seg: 12 → 13 med 4 grupper valgt er helt greit (4/3/3/3).
-      if (!allowedGroups(players.length).includes(g)) { rejected = players.length; return; }
+      if (!allowedGroups(players.length).includes(g)) { rejectedPlayers = players; return; }
       made = players.length;
       return { ...current, groups: computeGroups(players, g), playoffResults: {} };
     });
@@ -968,11 +979,22 @@ async function confirmStart(g) {
     return;
   }
   btn.disabled = false; btn.textContent = 'Start';
-  if (rejected !== null) {
-    startPlayers = Array.from({ length: rejected });
-    showToast(`${rejected} deltakere nå — velg på nytt`);
+
+  if (rejectedPlayers !== null) {
+    // Tegn dialogen på nytt med den ferske lista fra transaksjonen. Uten dette
+    // sto den med knappene fra det gamle antallet og det nå ulovlige valget
+    // fortsatt aktivt, så «velg på nytt» ga samme avvisning i evig løkke.
+    startPlayers = rejectedPlayers;
+    startChoice = suggestGroups(rejectedPlayers.length);
+    renderStartDialog();
+    showToast(`${rejectedPlayers.length} deltakere nå — velg på nytt`);
     return;
   }
+  // Avbrutt av en annen grunn enn et ulovlig valg — turneringen forsvant mens
+  // dialogen sto åpen. Uten denne falt koden gjennom til suksessgrenen og
+  // meldte «0 kamper».
+  if (!res || !res.committed) { showToast('Kunne ikke starte — prøv igjen'); return; }
+
   hideStartDialog();
   showToast(`${g} ${g===1?'gruppe':'grupper'} · ${matchCount(made, g)} kamper`);
 }
@@ -1228,27 +1250,71 @@ function calcStandings(group, results, mode, dir) {
     else{s[r.home].d++;s[r.home].pts++;s[r.away].d++;s[r.away].pts++;}
   });
 
-  function h2h(a,b) {
-    const m=Object.values(results).find(r=>(r.home===a&&r.away===b)||(r.home===b&&r.away===a));
-    if(!m) return 0;
-    if(m.winner==='draw') return 1;
-    return (m.winner==='a'&&m.home===a)||(m.winner==='b'&&m.away===a)?3:0;
+  // Innbyrdes oppgjør regnes som en miniliga blant de likestilte, ikke parvis.
+  // En parvis komparator er ikke transitiv: i en tresykel (A slår B, B slår C,
+  // C slår A) gir den motstridende svar for hvert par, og Array.sort returnerer
+  // da ulikt resultat avhengig av rekkefølgen spillerne ligger i gruppa.
+  // Miniligaen gir én verdi per spiller og er transitiv av konstruksjon.
+  function miniLeague(names) {
+    const set = new Set(names);
+    const m = {};
+    names.forEach(n => { m[n] = { pts:0, gf:0, ga:0 }; });
+    Object.values(results).forEach(r => {
+      if (!r.winner || !set.has(r.home) || !set.has(r.away)) return;
+      if (typeof r.homeScore==='number' && typeof r.awayScore==='number') {
+        m[r.home].gf += r.homeScore; m[r.home].ga += r.awayScore;
+        m[r.away].gf += r.awayScore; m[r.away].ga += r.homeScore;
+      }
+      if (r.winner==='a') m[r.home].pts += 3;
+      else if (r.winner==='b') m[r.away].pts += 3;
+      else { m[r.home].pts++; m[r.away].pts++; }
+    });
+    return m;
   }
 
-  return [...group].sort((a,b)=>{
-    const sa=s[a],sb=s[b];
+  // Nøklene som er transitive kan sorteres direkte. Rekkefølgen inne i en
+  // gjenstående likhet avgjøres etterpå, av miniligaen.
+  const primary = (a, b) => {
+    const sa=s[a], sb=s[b];
     if(sb.pts!==sa.pts) return sb.pts-sa.pts;
     if(sb.w!==sa.w) return sb.w-sa.w;
     if(mode==='score') {
       if(dir==='low') { if(sa.gf!==sb.gf) return sa.gf-sb.gf; }
       else { if(sb.gd!==sa.gd) return sb.gd-sa.gd; if(sb.gf!==sa.gf) return sb.gf-sa.gf; }
     }
-    const h=h2h(b,a)-h2h(a,b); if(h) return h;
-    if(sa.l!==sb.l) return sa.l-sb.l;
-    // Deterministisk: Math.random() gjorde at tabellen stokket om seg selv ved
-    // hver rendring, og playoff-kortene byttet om på navnene mellom rendringer.
-    return a.localeCompare(b, 'no');
-  }).map((name,i)=>({pos:i+1,name,...s[name]}));
+    return 0;
+  };
+
+  const sorted = [...group].sort((a,b) => primary(a,b) || a.localeCompare(b,'no'));
+
+  // Del i klynger som er like etter de transitive nøklene, og sorter hver
+  // klynge på miniligaen. Er også den lik, står alfabetisk rekkefølge — en
+  // ekte tresykel kan ikke skilles sportslig, men den skal i det minste være
+  // forutsigbar og lik for alle skjermer.
+  const out = [];
+  for (let i = 0; i < sorted.length; ) {
+    let j = i + 1;
+    while (j < sorted.length && primary(sorted[i], sorted[j]) === 0) j++;
+    const cluster = sorted.slice(i, j);
+    if (cluster.length > 1) {
+      const m = miniLeague(cluster);
+      cluster.sort((a,b) => {
+        if (m[b].pts !== m[a].pts) return m[b].pts - m[a].pts;
+        if (mode==='score') {
+          if (dir==='low') { if (m[a].gf !== m[b].gf) return m[a].gf - m[b].gf; }
+          else {
+            const da=m[a].gf-m[a].ga, db=m[b].gf-m[b].ga;
+            if (db !== da) return db - da;
+          }
+        }
+        if (s[a].l !== s[b].l) return s[a].l - s[b].l;
+        return a.localeCompare(b,'no');
+      });
+    }
+    out.push(...cluster);
+    i = j;
+  }
+  return out.map((name,i)=>({pos:i+1,name,...s[name]}));
 }
 
 // ===== RENDER TOURNAMENT =====

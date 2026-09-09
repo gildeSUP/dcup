@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<!-- Testsiden må aldri komme fra cache. Den cache-buster dcup.js, men kunne
+     selv bli servert gammel — og da rapporterer den forrige kjørings tall. -->
+<meta http-equiv="Cache-Control" content="no-store, must-revalidate" />
 <title>dCup — tester</title>
 <style>
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 900px;
@@ -195,6 +198,41 @@ eq('resultat med ukjent spiller ignoreres',
 const stable = new Set();
 for (let i=0;i<200;i++) stable.add(calcStandings(G, {}, 'wl').map(r=>r.name).join('|'));
 eq('rekkefølgen er deterministisk uten kamper', stable.size, 1);
+
+// ---------- #28: tresykel og miniliga ----------
+section('tresykel');
+// A slår B, B slår C, C slår A: alle 3 poeng og én seier. Ingen innbyrdes
+// regel kan skille dem — men rekkefølgen skal ikke avhenge av gruppeorden.
+const cycle = res([['A','B',1,0],['B','C',1,0],['C','A',1,0]]);
+const perms = [['A','B','C'],['A','C','B'],['B','A','C'],['B','C','A'],['C','A','B'],['C','B','A']];
+eq('alle tre står med 3 poeng', calcStandings(['A','B','C'], cycle, 'wl').map(r=>r.pts), [3,3,3]);
+eq('samme rekkefølge uansett hvordan gruppa er stokket',
+   new Set(perms.map(g=>calcStandings(g, cycle, 'wl').map(r=>r.name).join('|'))).size, 1);
+eq('tresykelen faller til alfabetisk', calcStandings(['C','B','A'], cycle, 'wl').map(r=>r.name), ['A','B','C']);
+
+// Miniliga skiller tre like inne i en større gruppe
+const four = res([['A','B',1,0],['A','C',1,0],['A','D',1,0],
+                  ['B','C',1,0],['B','D',1,0],['C','D',1,0]]);
+eq('uten likhet er rekkefølgen uendret', calcStandings(G, four, 'wl').map(r=>r.name), ['A','B','C','D']);
+// B, C og D likestilt på poeng: B slår C, C slår D, D slår B er sykel;
+// her lar vi B slå både C og D, så miniligaen skiller dem
+const mini = res([['A','B',1,0],['A','C',1,0],['A','D',1,0],
+                  ['B','C',1,0],['B','D',1,0],['C','D',0,1]]);
+eq('miniliga rangerer de likestilte', calcStandings(G, mini, 'wl').map(r=>r.name)[1], 'B');
+eq('miniliga er uavhengig av gruppeorden',
+   new Set([['A','B','C','D'],['D','C','B','A'],['C','A','D','B']]
+     .map(g=>calcStandings(g, mini, 'wl').map(r=>r.name).join('|'))).size, 1);
+
+// Innbyrdes oppgjør skal fortsatt slå gjennom for to likestilte
+const two = res([['A','B',1,0],['A','C',1,0],['B','C',1,0],['C','A',0,0]]);
+eq('to likestilte skilles av innbyrdes oppgjør',
+   calcStandings(['A','B'], res([['A','B',1,0]]), 'wl').map(r=>r.name), ['A','B']);
+eq('og motsatt vei', calcStandings(['A','B'], res([['A','B',0,1]]), 'wl').map(r=>r.name), ['B','A']);
+
+// score-modus: målforskjell i miniligaen
+const scTie = res([['A','B',3,0],['B','C',1,0],['C','A',1,0]], 'score');
+eq('score-modus gir deterministisk rekkefølge i sykel',
+   new Set(perms.map(g=>calcStandings(g, scTie, 'score', 'high').map(r=>r.name).join('|'))).size, 1);
 
 // ---------- podium ----------
 section('podium');
