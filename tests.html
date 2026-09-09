@@ -233,6 +233,39 @@ const scTie = res([['A','B',3,0],['B','C',1,0],['C','A',1,0]], 'score');
 eq('score-modus gir deterministisk rekkefølge i sykel',
    new Set(perms.map(g=>calcStandings(g, scTie, 'score', 'high').map(r=>r.name).join('|'))).size, 1);
 
+// ---------- uavgjort som må avgjøres manuelt ----------
+section('uavgjort');
+eq('tresykelen meldes som uavgjort', unresolvedTies(['A','B','C'], cycle, 'wl').map(c=>c.names),
+   [['A','B','C']]);
+eq('nøkkelen er navnene, ikke plasseringen',
+   unresolvedTies(['A','B','C'], cycle, 'wl')[0].key, tieKey(['C','A','B']));
+eq('en gruppe uten likhet melder ingenting', unresolvedTies(G, four, 'wl'), []);
+eq('to som skilles innbyrdes melder ingenting',
+   unresolvedTies(['A','B'], res([['A','B',1,0]]), 'wl'), []);
+
+const tb = { [tieKey(['A','B','C'])]: ['C','A','B'] };
+eq('registrert rekkefølge styrer tabellen',
+   calcStandings(['A','B','C'], cycle, 'wl', 'high', tb).map(r=>r.name), ['C','A','B']);
+eq('avgjort klynge meldes ikke som uavgjort',
+   unresolvedTies(['A','B','C'], cycle, 'wl', 'high', tb), []);
+eq('men den er fortsatt en klynge, merket som avgjort',
+   tieClusters(['A','B','C'], cycle, 'wl', 'high', tb).map(c=>[c.names.join(''), c.resolved]),
+   [['CAB', true]]);
+eq('en avgjørelse for andre navn ignoreres',
+   calcStandings(['A','B','C'], cycle, 'wl', 'high', { [tieKey(['A','B'])]: ['B','A'] }).map(r=>r.name),
+   ['A','B','C']);
+// Et navn som ikke sto i den registrerte rekkefølgen skal ikke havne først
+eq('ukjent navn i klyngen havner bakerst',
+   calcStandings(['A','B','C'], cycle, 'wl', 'high', { [tieKey(['A','B','C'])]: ['C','B'] })
+     .map(r=>r.name), ['C','B','A']);
+// Avgjørelsen gjelder bare de likestilte — den kan ikke løfte noen forbi en
+// spiller som faktisk står over dem
+const twoTied = res([['A','B',1,0],['A','C',1,0],['B','C',1,0],
+                     ['A','D',1,0],['B','D',1,0],['C','D',1,0]]);
+eq('avgjørelsen flytter ingen forbi en som står over',
+   calcStandings(G, twoTied, 'wl', 'high', { [tieKey(['B','C'])]: ['C','B'] }).map(r=>r.name),
+   ['A','B','C','D']);
+
 // ---------- podium ----------
 section('podium');
 eq('uten grupper er det ingen pall', podium({}), null);
@@ -291,6 +324,43 @@ eq('bronsen får semitaperne', `${playoffMatches(t4Played)[3].home} vs ${playoff
 const stored = { ...t2, playoffResults: { match_0: { winner:'a', home:'A2', away:'B3', loser:'B3' } } };
 eq('lagret kamp viser lagrede navn, ikke tabellens',
    `${playoffMatches(stored)[0].home} vs ${playoffMatches(stored)[0].away}`, 'A2 vs B3');
+
+// ---------- advance: hvor mange går videre ----------
+section('videre fra gruppa');
+eq('to grupper uten valg = plasseringsstigen som før', advanceCount(t2), 'all');
+eq('fire grupper uten valg = gruppevinnerne', advanceCount(t4), 1);
+eq('én gruppe har ikke noe sluttspill', playoffMatches({ ...oneGroup, advance: 2 }), []);
+eq('valg som ikke går opp klemmes ned', advanceCount({ ...t4, advance: 3 }), 2);
+eq('kan ikke sende flere videre enn gruppa har', advanceCount({ ...t2, advance: 4 }), 2);
+eq('søppelverdi faller til 1', advanceCount({ ...t4, advance: 'tull' }), 1);
+
+eq('valgene med to grupper à tre', allowedAdvance(2, 3), [1, 2, 'all']);
+eq('valgene med fire grupper à tre', allowedAdvance(4, 3), [1, 2]);
+eq('én gruppe har ingen valg', allowedAdvance(1, 5), []);
+
+const t2Final = { ...t2, advance: 1 };
+eq('to grupper, bare vinneren videre: én finale', playoffMatches(t2Final).map(m=>m.key), ['match_0']);
+eq('og den står mellom gruppevinnerne',
+   `${playoffMatches(t2Final)[0].home} vs ${playoffMatches(t2Final)[0].away}`, 'A1 vs B1');
+
+const t2Semi = { ...t2, advance: 2 };
+eq('to grupper, topp 2: semier, finale og bronse',
+   playoffMatches(t2Semi).map(m=>m.key), ['semi_0','semi_1','match_0','match_1']);
+eq('gruppevinner møter toer fra den andre gruppa',
+   playoffMatches(t2Semi).slice(0,2).map(m=>`${m.home} vs ${m.away}`), ['A1 vs B2','B1 vs A2']);
+eq('semiene sier hvor spillerne kommer fra',
+   playoffMatches(t2Semi)[0].homeFrom, 'Nr 1 gruppe A');
+
+const t4Quarter = { ...t4, advance: 2 };
+eq('fire grupper, topp 2: kvartfinaler hele veien',
+   playoffMatches(t4Quarter).map(m=>m.key),
+   ['qf_0','qf_1','qf_2','qf_3','semi_0','semi_1','match_0','match_1']);
+eq('ingen møter noen fra sin egen gruppe i kvartfinalen',
+   playoffMatches(t4Quarter).slice(0,4).map(m=>m.home[0] === m.away[0]), [false,false,false,false]);
+eq('semifinalen venter på kvartfinalevinnerne',
+   playoffMatches(t4Quarter)[4].homeFrom, 'Vinner av kvartfinale 1');
+eq('finalen er fortsatt match_0',
+   playoffMatches(t4Quarter).find(m=>m.label==='FINALE').key, 'match_0');
 
 // ---------- podium for alle gruppetall ----------
 section('podium per gruppetall');

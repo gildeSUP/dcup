@@ -23,7 +23,8 @@ function uuid() {
 // «1 gruppe · 6 kamper» la seg oppå Lagre. Er en dialog åpen, vises den øverst
 // i stedet.
 function anyDialogOpen() {
-  const ids = ['join-overlay','people-overlay','add-tournament-overlay','start-tournament-overlay'];
+  const ids = ['join-overlay','people-overlay','add-tournament-overlay',
+               'start-tournament-overlay','tiebreak-overlay'];
   if (ids.some(id => {
     const el = document.getElementById(id);
     return el && el.style.display !== 'none' && el.style.display !== '';
@@ -39,7 +40,13 @@ function showToast(msg) {
 }
 // Bunn-modalene har sin egen scroll (overflow-y:auto) for langt innhold —
 // uten dette kan siden bak fortsatt scrolle samtidig, som er forvirrende.
-function lockBodyScroll() { document.body.style.overflow = 'hidden'; }
+function lockBodyScroll() {
+  document.body.style.overflow = 'hidden';
+  // Sto det allerede en toast nederst da arket kom opp, havner den under
+  // knappene — løft den samme vei som showToast gjør (P2 #32).
+  const t = document.getElementById('toast');
+  if (t && t.classList.contains('show')) t.classList.add('toast-top');
+}
 function unlockBodyScroll() { document.body.style.overflow = ''; }
 
 // Turneringsnøklene er UUID-er, så Firebase gir dem tilbake sortert på
@@ -492,9 +499,31 @@ function renameInTournament(t, oldName, newName) {
   if (t.playoffResults) {
     const out = {};
     Object.entries(t.playoffResults).forEach(([k, r]) => {
-      out[k] = { ...r, loser: r.loser ? swap(r.loser) : r.loser };
+      // home/away er navn, ikke sider — playoffWinner leser dem rett ut. Uten
+      // at de også byttes, sto det gamle navnet igjen som finalevinner.
+      out[k] = {
+        ...r,
+        home: r.home !== undefined ? swap(r.home) : r.home,
+        away: r.away !== undefined ? swap(r.away) : r.away,
+        loser: r.loser ? swap(r.loser) : r.loser,
+      };
     });
     next.playoffResults = out;
+  }
+  if (t.tiebreaks) {
+    // Nøkkelen er laget av navnene i klyngen, så den må regnes ut på nytt —
+    // ellers ville avgjørelsen blitt liggende under en nøkkel ingen slår opp.
+    const out = {};
+    Object.entries(t.tiebreaks).forEach(([gk, cluster]) => {
+      const g = {};
+      Object.values(cluster || {}).forEach(order => {
+        if (!Array.isArray(order)) return;
+        const renamed = order.map(swap);
+        g[tieKey(renamed)] = renamed;
+      });
+      out[gk] = g;
+    });
+    next.tiebreaks = out;
   }
   if (t.scores) {
     const out = {};
@@ -951,10 +980,12 @@ async function startTournament() {
 
 let startPlayers = [];
 let startChoice = 1;
+let startAdvance = null;   // null = standarden for det valgte gruppetallet
 
 function showStartDialog(players) {
   startPlayers = players;
   startChoice = suggestGroups(players.length);
+  startAdvance = null;   // null = bruk standarden for det valgte gruppetallet
   renderStartDialog();
   document.getElementById('start-tournament-overlay').style.display = 'flex';
   lockBodyScroll();
@@ -963,7 +994,22 @@ function hideStartDialog() {
   document.getElementById('start-tournament-overlay').style.display = 'none';
   unlockBodyScroll();
 }
-function selectStartChoice(g) { startChoice = g; renderStartDialog(); }
+function selectStartChoice(g) {
+  // Gruppetallet endrer hvilke videre-valg som finnes, så et valg som ikke
+  // lenger går opp må falle tilbake til standarden i stedet for å bli med
+  // videre og gi en bracket som ikke går i hop.
+  if (g !== startChoice) startAdvance = null;
+  startChoice = g;
+  renderStartDialog();
+}
+function selectStartAdvance(a) { startAdvance = a; renderStartDialog(); }
+
+// Standarden per gruppetall: to grupper spiller hele plasseringsstigen som før,
+// fire grupper sender gruppevinnerne videre som før.
+function defaultAdvance(groups) { return groups === 2 ? 'all' : 1; }
+function currentAdvance() {
+  return startAdvance === null ? defaultAdvance(startChoice) : startAdvance;
+}
 
 function renderStartDialog() {
   const n = startPlayers.length;
@@ -1001,6 +1047,23 @@ function renderStartDialog() {
       + blocked.map(b => `<br><span style="opacity:0.7;">${b}</span>`).join('');
   }
 
+  // Hvor mange som går videre. Bare relevant med minst to grupper — med én
+  // gruppe avgjør tabellen alt, og det finnes ikke noe sluttspill.
+  const advGroup = document.getElementById('start-advance-group');
+  const sizesNow = groupSizes(n, startChoice);
+  const advAllowed = allowedAdvance(startChoice, Math.min(...sizesNow));
+  advGroup.style.display = startChoice > 1 && advAllowed.length > 1 ? 'block' : 'none';
+  if (startChoice > 1 && advAllowed.length > 1) {
+    const cur = advAllowed.includes(currentAdvance()) ? currentAdvance() : advAllowed[0];
+    document.getElementById('start-advance-grid').innerHTML = advAllowed.map(a => `
+      <button type="button" class="mode-btn ${a===cur?'selected':''}"
+        onclick="selectStartAdvance(${a==='all'?"'all'":a})">
+        <span class="mode-btn-icon">${a==='all'?'∗':a}</span>
+        <span class="mode-btn-label">${a==='all'?'alle' : a===1?'vinneren':'beste'}</span>
+      </button>`).join('');
+    document.getElementById('start-advance-detail').textContent = advanceBlurb(startChoice, cur);
+  }
+
   // En treergruppe uten uavgjort kan ende i en tresykel som ingen innbyrdes
   // regel kan løse. I score-modus sorterer målforskjell først, så der er det
   // ikke noe problem.
@@ -1011,10 +1074,20 @@ function renderStartDialog() {
     warn.style.display = 'block';
     warn.textContent = `⚠️ Gruppe ${String.fromCharCode(65 + small)} får ${MIN_GROUP} spillere. `
       + `Ved ${MODES[tState.mode].label} kan tre like resultater ikke skilles sportslig — `
-      + `da avgjør alfabetisk rekkefølge.`;
+      + `da kan dere avgjøre det selv i tabellen når det skjer.`;
   } else {
     warn.style.display = 'none';
   }
+}
+
+// Forklarer valget i klartekst i stedet for å la folk gjette hva «2» betyr.
+function advanceBlurb(groups, adv) {
+  if (adv === 'all') return 'Hver plass i tabellen møter samme plass i den andre gruppa — alle får en kamp, og hele rekkefølgen avgjøres.';
+  const q = groups * adv;
+  const round = q === 2 ? 'rett til finale' : q === 4 ? 'semifinaler, finale og bronsekamp'
+    : q === 8 ? 'kvartfinaler, semifinaler, finale og bronsekamp' : `${q} i sluttspillet`;
+  return (adv === 1 ? 'Gruppevinnerne går videre' : `De ${adv} beste fra hver gruppe går videre`)
+    + ` — ${q} spillere, ${round}.`;
 }
 
 function confirmStartClicked() { confirmStart(startChoice); }
@@ -1031,7 +1104,13 @@ async function confirmStart(g) {
       // seg: 12 → 13 med 4 grupper valgt er helt greit (4/3/3/3).
       if (!allowedGroups(players.length).includes(g)) { rejectedPlayers = players; return; }
       made = players.length;
-      return { ...current, groups: computeGroups(players, g), playoffResults: {} };
+      const groups = computeGroups(players, g);
+      // Valget lagres sammen med gruppene, i samme transaksjon: da kan de ikke
+      // komme i utakt om noen melder seg på i samme øyeblikk. advanceCount
+      // klemmer det ned igjen hvis gruppene skulle bli mindre enn valget
+      // forutsatte. tiebreaks nullstilles — de gjaldt den forrige trekningen.
+      const adv = startAdvance === null ? defaultAdvance(g) : startAdvance;
+      return { ...current, groups, advance: adv, playoffResults: {}, tiebreaks: null };
     });
   } catch (err) {
     btn.disabled = false; btn.textContent = 'Start';
@@ -1061,8 +1140,10 @@ async function confirmStart(g) {
 
 function resetTournament() {
   if (!confirm('Nullstille turneringen? Dette sletter alle grupper og resultater.')) return;
-  tState.groups = null; tState.playoffResults = {};
-  tWrite({ groups: null, playoffResults: {} });
+  // tiebreaks gjaldt den gamle trekningen: nye grupper betyr nye klynger, og
+  // en gammel avgjørelse ville dukket opp igjen på et tilfeldig par.
+  tState.groups = null; tState.playoffResults = {}; tState.tiebreaks = null;
+  tWrite({ groups: null, playoffResults: {}, tiebreaks: null });
 }
 
 // ===== STANDINGS =====
@@ -1126,6 +1207,38 @@ function playoffLoser(pr, key) {
   return derived !== undefined ? derived : r.loser;
 }
 
+// Hvor mange som går videre fra hver gruppe. 'alle' er plasseringsstigen med
+// to grupper, der hver tabellplass møter samme plass i den andre gruppa — det
+// har alltid vært oppførselen der, så den er fortsatt standard. Med fire
+// grupper er standarden gruppevinnerne, som før.
+//
+// Antallet kvalifiserte (grupper × videre) må være en toerpotens for at
+// braketten skal gå opp, og ingen gruppe kan sende flere videre enn den har
+// spillere. Begge deler klemmes ned her, så en verdi som ikke går opp aldri
+// kan gi en halvbygget bracket.
+function isPow2(n) { return n >= 2 && (n & (n - 1)) === 0; }
+function advanceCount(t) {
+  const gs = groupsOf(t);
+  if (gs.length < 2) return 1;
+  const raw = t && t.advance;
+  if (raw === undefined || raw === null || raw === 'all') return gs.length === 2 ? 'all' : 1;
+  let n = Math.floor(Number(raw));
+  if (!Number.isFinite(n) || n < 1) return 1;
+  n = Math.min(n, Math.min(...gs.map(g => (g.players || []).length)) || 1);
+  while (n > 1 && !isPow2(gs.length * n)) n--;
+  return Math.max(1, n);
+}
+
+// Valgene som gir en bracket som går opp, til bruk i startdialogen.
+// groupSize er størrelsen på den minste gruppa.
+function allowedAdvance(groupCount, groupSize) {
+  if (groupCount < 2) return [];
+  const out = [];
+  for (let n = 1; n <= Math.min(4, groupSize); n++) if (isPow2(groupCount * n)) out.push(n);
+  if (groupCount === 2) out.push('all');
+  return out;
+}
+
 // Gruppene pares vilkårlig, ikke etter rangering på tvers: computeGroups
 // stokker før den deler ut, så A–D er tilfeldig sammensatt og parringen blir
 // tilfeldig av seg selv. Da slipper vi å sammenligne poeng mellom grupper av
@@ -1134,7 +1247,7 @@ function playoffLoser(pr, key) {
 function playoffMatches(t) {
   const gs = groupsOf(t);
   if (gs.length < 2) return [];
-  const st = gs.map(g => calcStandings(g.players, g.results, t.mode, scoreDirOf(t)));
+  const st = gs.map((g, gi) => calcStandings(g.players, g.results, t.mode, scoreDirOf(t), tiebreaksFor(t, gi)));
   const pr = t.playoffResults || {};
   const top = i => ((st[i] || [])[0] || {}).name;
 
@@ -1148,7 +1261,11 @@ function playoffMatches(t) {
       : m;
   };
 
-  if (gs.length === 2) {
+  const adv = advanceCount(t);
+
+  // 'alle' = plasseringsstigen: hver tabellplass i A møter samme plass i B, så
+  // alle får en kamp og hele rekkefølgen avgjøres. Finnes bare med to grupper.
+  if (adv === 'all') {
     const size = Math.min(st[0].length, st[1].length);
     return Array.from({ length: size }, (_, i) => withStored({
       key: 'match_' + i,
@@ -1157,18 +1274,74 @@ function playoffMatches(t) {
       homeFrom: `A${i + 1}`, awayFrom: `B${i + 1}`,
     }));
   }
-  return [
-    { key:'semi_0', label:'SEMIFINALE 1', home: top(0), away: top(1),
-      homeFrom:'Vinner gruppe A', awayFrom:'Vinner gruppe B' },
-    { key:'semi_1', label:'SEMIFINALE 2', home: top(2), away: top(3),
-      homeFrom:'Vinner gruppe C', awayFrom:'Vinner gruppe D' },
-    { key:'match_0', label:'FINALE',
-      home: playoffWinner(pr,'semi_0'), away: playoffWinner(pr,'semi_1'),
-      homeFrom:'Vinner av semi 1', awayFrom:'Vinner av semi 2' },
-    { key:'match_1', label:'BRONSE',
-      home: playoffLoser(pr,'semi_0'), away: playoffLoser(pr,'semi_1'),
-      homeFrom:'Taper av semi 1', awayFrom:'Taper av semi 2' },
-  ].map(withStored);
+
+  // Kvalifiserte, seedet radvis: alle gruppevinnerne først, så alle
+  // andreplassene. Antallet er alltid en toerpotens (advanceCount sørger for
+  // det), så braketten går opp uten frikamper.
+  const seeds = [];
+  for (let r = 0; r < adv; r++) {
+    for (let gi = 0; gi < gs.length; gi++) {
+      seeds.push({
+        name: ((st[gi] || [])[r] || {}).name,
+        from: adv === 1 ? `Vinner gruppe ${gs[gi].name}` : `Nr ${r + 1} gruppe ${gs[gi].name}`,
+      });
+    }
+  }
+
+  // Med bare gruppevinnere er alle seedene like gode, og nabo-paring (A mot B,
+  // C mot D) er det som alltid har vært brukt. Går det flere videre fra hver
+  // gruppe, speilvendes lista i stedet, slik at en gruppevinner møter en
+  // andreplass fra en annen gruppe i første runde.
+  let round = [];
+  if (adv === 1) {
+    for (let i = 0; i < seeds.length; i += 2) round.push([seeds[i], seeds[i + 1]]);
+  } else {
+    for (let i = 0; i < seeds.length / 2; i++) round.push([seeds[i], seeds[seeds.length - 1 - i]]);
+  }
+
+  const out = [];
+  let semiKeys = null;
+  while (round.length) {
+    const size = round.length;                       // kamper i denne runden
+    const isFinal = size === 1;
+    const prefix = isFinal ? 'match' : size === 2 ? 'semi' : size === 4 ? 'qf' : 'r' + size * 2;
+    const label = n => isFinal ? 'FINALE'
+      : size === 2 ? `SEMIFINALE ${n + 1}`
+      : size === 4 ? `KVARTFINALE ${n + 1}`
+      : `${size * 2}-DELS ${n + 1}`;
+
+    const keys = round.map((_, i) => prefix + '_' + i);
+    round.forEach(([h, a], i) => out.push(withStored({
+      key: keys[i], label: label(i),
+      home: h.name, away: a.name, homeFrom: h.from, awayFrom: a.from,
+    })));
+    if (size === 2) semiKeys = keys;
+
+    if (isFinal) break;
+    round = [];
+    for (let i = 0; i < keys.length; i += 2) {
+      round.push([
+        { name: playoffWinner(pr, keys[i]), from: 'Vinner av ' + shortLabel(prefix, i) },
+        { name: playoffWinner(pr, keys[i + 1]), from: 'Vinner av ' + shortLabel(prefix, i + 1) },
+      ]);
+    }
+  }
+
+  // Bronsefinale bare når det faktisk fantes semifinaler å tape.
+  if (semiKeys) {
+    out.push(withStored({
+      key: 'match_1', label: 'BRONSE',
+      home: playoffLoser(pr, semiKeys[0]), away: playoffLoser(pr, semiKeys[1]),
+      homeFrom: 'Taper av semi 1', awayFrom: 'Taper av semi 2',
+    }));
+  }
+  return out;
+}
+
+function shortLabel(prefix, i) {
+  if (prefix === 'semi') return 'semi ' + (i + 1);
+  if (prefix === 'qf') return 'kvartfinale ' + (i + 1);
+  return 'kamp ' + (i + 1);
 }
 
 // Pallen for begge formater, delt mellom appen og liveskjermen. Returnerer
@@ -1189,7 +1362,7 @@ function podium(t) {
   // spille, så pallen leses rett av tabellen når alt er ferdig.
   if (gs.length === 1) {
     if (!isFinished(t)) return null;
-    const rows = calcStandings(gs[0].players, gs[0].results, t.mode, dir);
+    const rows = calcStandings(gs[0].players, gs[0].results, t.mode, dir, tiebreaksFor(t, 0));
     if (!rows.length) return null;
     return { champion: rows[0].name, runnerUp: (rows[1]||{}).name, third: (rows[2]||{}).name };
   }
@@ -1219,9 +1392,11 @@ function winnerBlurb(t, name) {
     if (!diff) return `${me.score}, delt beste resultat av ${rows.length} — men først til å levere.`;
     return `${me.score}, ${diff} ${scoreDirOf(t)==='low'?'mindre':'mer'} enn nestemann av ${rows.length} deltakere.`;
   }
-  const mine = groupsOf(t).find(g => g.players.includes(name));
+  const myGi = groupsOf(t).findIndex(g => g.players.includes(name));
+  const mine = groupsOf(t)[myGi];
   if (!mine) return 'Seier i finalen.';
-  const me = calcStandings(mine.players, mine.results, t.mode, scoreDirOf(t)).find(r => r.name === name);
+  const me = calcStandings(mine.players, mine.results, t.mode, scoreDirOf(t), tiebreaksFor(t, myGi))
+    .find(r => r.name === name);
   if (!me || !me.p) return 'Seier i finalen.';
   if (!me.l && me.w === me.p) return `Ubeslått gjennom hele gruppespillet — ${me.w} av ${me.p} ${me.p===1?'kamp':'kamper'} vunnet, og finalen med.`;
   if (!me.l) return `Ikke tapt en kamp i gruppa på ${me.p} forsøk, og så finalen.`;
@@ -1422,7 +1597,33 @@ function lastPlayed(t) {
   return played.reduce((a,b)=>(b.r.ts||0)>=(a.r.ts||0)?b:a);
 }
 
-function calcStandings(group, results, mode, dir) {
+// ===== UAVGJORT SOM MÅ AVGJØRES =====
+// Står to spillere helt likt etter poeng, seire, målforskjell OG den innbyrdes
+// miniligaen, kan de ikke skilles sportslig. Før avgjorde alfabetisk
+// rekkefølge i stillhet. Nå kan hvem som helst registrere hvem som gikk videre
+// — spilt omkamp, stein-saks-papir, myntkast, det er opp til dem — og valget
+// lagres på turneringen slik at alle skjermer viser det samme.
+//
+// Nøkkelen er navnene i klyngen, sortert, ikke plasseringen: flytter klyngen
+// seg opp eller ned i tabellen fordi noen andre spiller en kamp, gjelder
+// avgjørelsen fortsatt.
+function tieKey(names) { return safeKey([...names].sort().join('|')); }
+function tiebreaksFor(t, gi) { return ((t && t.tiebreaks) || {})['g' + gi] || {}; }
+
+function calcStandings(group, results, mode, dir, tiebreaks) {
+  return rankGroup(group, results, mode, dir, tiebreaks).rows;
+}
+
+// Alle klyngene som ikke kan skilles sportslig, både de som er avgjort
+// manuelt og de som venter på en avgjørelse.
+function tieClusters(group, results, mode, dir, tiebreaks) {
+  return rankGroup(group, results, mode, dir, tiebreaks).ties;
+}
+function unresolvedTies(group, results, mode, dir, tiebreaks) {
+  return tieClusters(group, results, mode, dir, tiebreaks).filter(c => !c.resolved);
+}
+
+function rankGroup(group, results, mode, dir, tiebreaks) {
   mode = mode || tState.mode;
   dir = dir || scoreDirOf(tState);
   const s={};
@@ -1480,33 +1681,59 @@ function calcStandings(group, results, mode, dir) {
   const sorted = [...group].sort((a,b) => primary(a,b) || a.localeCompare(b,'no'));
 
   // Del i klynger som er like etter de transitive nøklene, og sorter hver
-  // klynge på miniligaen. Er også den lik, står alfabetisk rekkefølge — en
-  // ekte tresykel kan ikke skilles sportslig, men den skal i det minste være
-  // forutsigbar og lik for alle skjermer.
+  // klynge på miniligaen. Er også den lik, er de uskillelige sportslig: da
+  // gjelder en registrert avgjørelse hvis den finnes, ellers alfabetisk —
+  // forutsigbart og likt på alle skjermer inntil noen avgjør det.
   const out = [];
+  const ties = [];
   for (let i = 0; i < sorted.length; ) {
     let j = i + 1;
     while (j < sorted.length && primary(sorted[i], sorted[j]) === 0) j++;
     const cluster = sorted.slice(i, j);
-    if (cluster.length > 1) {
-      const m = miniLeague(cluster);
-      cluster.sort((a,b) => {
-        if (m[b].pts !== m[a].pts) return m[b].pts - m[a].pts;
-        if (mode==='score') {
-          if (dir==='low') { if (m[a].gf !== m[b].gf) return m[a].gf - m[b].gf; }
-          else {
-            const da=m[a].gf-m[a].ga, db=m[b].gf-m[b].ga;
-            if (db !== da) return db - da;
-          }
+    if (cluster.length === 1) { out.push(cluster[0]); i = j; continue; }
+
+    const m = miniLeague(cluster);
+    // Alt her er én verdi per spiller, altså transitivt: klyngen kan deles på
+    // «secondary === 0» uten at rekkefølgen i lista påvirker svaret.
+    const secondary = (a,b) => {
+      if (m[b].pts !== m[a].pts) return m[b].pts - m[a].pts;
+      if (mode==='score') {
+        if (dir==='low') { if (m[a].gf !== m[b].gf) return m[a].gf - m[b].gf; }
+        else {
+          const da=m[a].gf-m[a].ga, db=m[b].gf-m[b].ga;
+          if (db !== da) return db - da;
         }
-        if (s[a].l !== s[b].l) return s[a].l - s[b].l;
-        return a.localeCompare(b,'no');
-      });
+      }
+      if (s[a].l !== s[b].l) return s[a].l - s[b].l;
+      return 0;
+    };
+    cluster.sort((a,b) => secondary(a,b) || a.localeCompare(b,'no'));
+
+    for (let k = 0; k < cluster.length; ) {
+      let l = k + 1;
+      while (l < cluster.length && secondary(cluster[k], cluster[l]) === 0) l++;
+      const tied = cluster.slice(k, l);
+      if (tied.length > 1) {
+        const order = (tiebreaks || {})[tieKey(tied)];
+        const resolved = Array.isArray(order) && order.length > 0;
+        if (resolved) {
+          // Et navn som ikke står i den registrerte rekkefølgen (lagt til
+          // etterpå) havner bakerst i klyngen, ikke først.
+          const ix = n => { const p = order.indexOf(n); return p < 0 ? Infinity : p; };
+          tied.sort((a,b) => (ix(a) - ix(b)) || a.localeCompare(b,'no'));
+        }
+        // En klynge meldes først når alle i den har spilt ferdig gruppa si.
+        // Uten dette ville hele gruppa stått som «uavgjort» før første kamp,
+        // der alle har null poeng — teknisk sant, men bare støy.
+        const settled = tied.every(n => s[n].p === group.length - 1);
+        if (resolved || settled) ties.push({ names: tied.slice(), key: tieKey(tied), resolved });
+      }
+      out.push(...tied);
+      k = l;
     }
-    out.push(...cluster);
     i = j;
   }
-  return out.map((name,i)=>({pos:i+1,name,...s[name]}));
+  return { rows: out.map((name,i)=>({pos:i+1,name,...s[name]})), ties };
 }
 
 // ===== RENDER TOURNAMENT =====
@@ -1572,7 +1799,9 @@ function renderTournamentView() {
   const showGD = tState.mode==='score';
   const showD = tState.mode==='wdl';
   sWrap.innerHTML = gs.map((g, gi)=>{
-    const rows = calcStandings(g.players, g.results);
+    const tb = tiebreaksFor(tState, gi);
+    const ranked = rankGroup(g.players, g.results, tState.mode, scoreDirOf(tState), tb);
+    const rows = ranked.rows;
     return `<div class="card">
       <div style="font-weight:700;font-size:14px;color:var(--${groupTone(gi)}-text);margin-bottom:0.75rem;">Gruppe ${escapeHTML(g.name)}</div>
       <table class="stand-table">
@@ -1594,6 +1823,7 @@ function renderTournamentView() {
           </tr>`;
         }).join('')}</tbody>
       </table>
+      ${ranked.ties.map(c => tieNoteHTML(gi, c)).join('')}
     </div>`;
   }).join('');
 
@@ -1655,6 +1885,120 @@ function renderTournamentView() {
       </div>
     </div>`;
   }).join('');
+}
+
+// ===== AVGJØR UAVGJORT =====
+// Navnene går aldri gjennom en onclick-streng — bare gruppeindeksen og den
+// escapede klyngenøkkelen, og klyngen slås opp på nytt når man trykker.
+// (Samme grunn som i deltakerlista: safeKey escaper ikke ' eller ".)
+function listNames(names) {
+  if (names.length < 2) return names[0] || '';
+  return names.slice(0, -1).join(', ') + ' og ' + names[names.length - 1];
+}
+
+function tieNoteHTML(gi, c) {
+  const names = c.names.map(escapeHTML);
+  const attrs = `data-tie-gi="${gi}" data-tie-key="${escapeHTML(c.key)}"`;
+  if (c.resolved) {
+    return `<div class="tie-note resolved">
+      <span class="tie-note-txt">Avgjort manuelt: ${names.join(' foran ')}</span>
+      <button ${attrs}>Endre</button>
+    </div>`;
+  }
+  return `<div class="tie-note">
+    <span class="tie-note-txt">⚠️ ${listNames(names)} står helt likt — resultatene skiller dem ikke.</span>
+    <button ${attrs}>Avgjør</button>
+  </div>`;
+}
+
+document.getElementById('t-standings-wrap')?.addEventListener('click', e => {
+  const btn = e.target.closest('[data-tie-key]');
+  if (!btn) return;
+  openTiebreakDialog(Number(btn.dataset.tieGi), btn.dataset.tieKey);
+});
+
+let tieCtx = null;
+
+// Klyngen slås opp på nytt fra gjeldende tabell, ikke fra det som ble tegnet:
+// et resultat kan ha landet fra en annen telefon i mellomtiden, og da er
+// klyngen en annen — eller borte.
+function findTieCluster(gi, key) {
+  const g = groupsOf(tState)[gi];
+  if (!g) return null;
+  const tb = tiebreaksFor(tState, gi);
+  return rankGroup(g.players, g.results, tState.mode, scoreDirOf(tState), tb)
+    .ties.find(c => c.key === key) || null;
+}
+
+function openTiebreakDialog(gi, key) {
+  const c = findTieCluster(gi, key);
+  if (!c) { showToast('Stillingen har endret seg — de står ikke likt lenger'); return; }
+  tieCtx = { gi, key, names: c.names.slice(), picked: [], resolved: c.resolved };
+  const g = groupsOf(tState)[gi];
+  document.getElementById('tiebreak-sub').textContent =
+    `${listNames(c.names)} i gruppe ${g.name} kan ikke skilles på resultatene. ` +
+    'Spill en omkamp, ta stein-saks-papir eller kast mynt — og registrer hvem som havner øverst.';
+  document.getElementById('tiebreak-label').textContent = c.names.length > 2
+    ? 'Trykk i den rekkefølgen de skal stå'
+    : 'Hvem havner øverst?';
+  document.getElementById('tiebreak-clear-btn').style.display = c.resolved ? 'block' : 'none';
+  renderTiebreakList();
+  document.getElementById('tiebreak-overlay').style.display = 'flex';
+  lockBodyScroll();
+}
+function hideTiebreakDialog() {
+  tieCtx = null;
+  document.getElementById('tiebreak-overlay').style.display = 'none';
+  unlockBodyScroll();
+}
+
+function renderTiebreakList() {
+  if (!tieCtx) return;
+  const wrap = document.getElementById('tiebreak-list');
+  wrap.innerHTML = tieCtx.names.map((n, i) => {
+    const pos = tieCtx.picked.indexOf(n);
+    return `<button class="tie-row${pos >= 0 ? ' picked' : ''}" data-tie-idx="${i}">
+      <span class="tie-rank">${pos >= 0 ? pos + 1 : '·'}</span>
+      <span>${escapeHTML(n)}</span>
+    </button>`;
+  }).join('');
+  const done = tieCtx.picked.length === tieCtx.names.length;
+  const save = document.getElementById('tiebreak-save-btn');
+  save.disabled = !done;
+  save.textContent = done ? 'Lagre' : 'Velg rekkefølge';
+}
+
+document.getElementById('tiebreak-list')?.addEventListener('click', e => {
+  const row = e.target.closest('[data-tie-idx]');
+  if (!row || !tieCtx) return;
+  const name = tieCtx.names[Number(row.dataset.tieIdx)];
+  if (tieCtx.picked.includes(name)) {
+    // Trykk på nytt = angre, og alt etter den faller også bort
+    tieCtx.picked = tieCtx.picked.slice(0, tieCtx.picked.indexOf(name));
+  } else {
+    tieCtx.picked.push(name);
+    // Er det bare én igjen, er rekkefølgen gitt — da slipper man et ekstra
+    // trykk for å si det åpenbare (og med to spillere er det ett trykk totalt).
+    const left = tieCtx.names.filter(n => !tieCtx.picked.includes(n));
+    if (left.length === 1) tieCtx.picked.push(left[0]);
+  }
+  renderTiebreakList();
+});
+
+function saveTiebreak() {
+  if (!tieCtx || tieCtx.picked.length !== tieCtx.names.length) return;
+  // Målrettet skriving, ikke hele turneringen: et resultat som lagres i samme
+  // øyeblikk fra en annen telefon skal ikke forsvinne.
+  tWrite({ ['tiebreaks/g' + tieCtx.gi + '/' + tieCtx.key]: tieCtx.picked.slice() });
+  showToast(tieCtx.picked[0] + ' står øverst');
+  hideTiebreakDialog();
+}
+
+function clearTiebreak() {
+  if (!tieCtx) return;
+  tWrite({ ['tiebreaks/g' + tieCtx.gi + '/' + tieCtx.key]: null });
+  showToast('Avgjørelsen er fjernet');
+  hideTiebreakDialog();
 }
 
 // ===== MATCH DIALOG =====
@@ -2238,12 +2582,12 @@ function renderDisplayContent() {
     return;
   }
 
-  const paint = (subset, label) => {
+  const paint = (subset, label, offset) => {
     content.innerHTML = `
       <div class="display-main">
         <div class="display-col" id="disp-tables-col">
           <div class="display-section-title">${board?'Poengtavle':'Tabell'}${label||''}</div>
-          ${board?renderDisplayBoard(t):renderDisplayTables(t, subset)}
+          ${board?renderDisplayBoard(t):renderDisplayTables(t, subset, offset)}
         </div>
         <div class="display-col">${board?renderDisplayBoardSide(t):renderDisplaySide(t)}</div>
       </div>`;
@@ -2268,7 +2612,7 @@ function renderDisplayContent() {
   const from = dispGroupPage * per;
   const subset = gs.slice(from, from + per);
   // Sidetelleren står bare når det faktisk er mer enn én side
-  paint(subset, pages > 1 ? ` · side ${dispGroupPage+1} av ${pages}` : '');
+  paint(subset, pages > 1 ? ` · side ${dispGroupPage+1} av ${pages}` : '', from);
 }
 
 function renderDisplayBoard(t) {
@@ -2316,14 +2660,17 @@ function renderDisplayBoardSide(t) {
   return lastCard + doneCard;
 }
 
-function renderDisplayTables(t, subset) {
+function renderDisplayTables(t, subset, offset) {
   const showGD = t.mode==='score';
   const showD = t.mode==='wdl';
   const gs = subset || groupsOf(t);
+  const from = offset || 0;
   return `<div class="display-grid">
-    ${gs.map(g=>{
+    ${gs.map((g, i)=>{
       if(!g.players.length) return '';
-      const rows=calcStandings(g.players, g.results, t.mode, scoreDirOf(t));
+      // from + i er gruppas ekte indeks i turneringen — subset er en utsnitt
+      // av sidevisningen, så i alene ville pekt på feil gruppes avgjørelser.
+      const rows=calcStandings(g.players, g.results, t.mode, scoreDirOf(t), tiebreaksFor(t, from + i));
       return `<div>
         <div class="display-group-title">Gruppe ${escapeHTML(g.name)}</div>
         <table class="display-table">

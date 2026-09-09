@@ -7,7 +7,7 @@
      De skal kunne deles fritt, men ikke ligge søkbare i Google. -->
 <meta name="robots" content="noindex, nofollow" />
 <title>dCup</title>
-<link rel="stylesheet" href="dcup.css?v=11">
+<link rel="stylesheet" href="dcup.css?v=12">
 </head>
 <body>
 
@@ -146,11 +146,34 @@
       <div class="mode-grid" id="start-choice-grid"></div>
       <p class="muted" id="start-detail" style="margin-top:0.5rem;"></p>
     </div>
+    <div class="form-group" id="start-advance-group" style="display:none;">
+      <label>Videre fra hver gruppe</label>
+      <div class="mode-grid" id="start-advance-grid"></div>
+      <p class="muted" id="start-advance-detail" style="margin-top:0.5rem;"></p>
+    </div>
     <div id="start-warning" class="start-warning" style="display:none;"></div>
     <div style="display:flex;gap:8px;margin-top:0.5rem;">
       <button class="btn-ghost" style="flex:1;" onclick="hideStartDialog()">Avbryt</button>
       <button class="btn-full" style="flex:2;" id="start-confirm-btn" onclick="confirmStartClicked()">Start</button>
     </div>
+  </div>
+</div>
+
+<!-- UAVGJORT-MODAL -->
+<div id="tiebreak-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:500;align-items:flex-end;justify-content:center;">
+  <div style="background:var(--bg);border-radius:var(--radius-lg) var(--radius-lg) 0 0;width:100%;max-width:540px;max-height:85vh;overflow-y:auto;padding:1.25rem 1.25rem 2.5rem;animation:slideUp 0.22s ease;">
+    <div style="width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 1rem;"></div>
+    <div style="font-size:16px;font-weight:700;margin-bottom:0.35rem;">Avgjør uavgjort</div>
+    <p class="muted mb1" id="tiebreak-sub"></p>
+    <div class="form-group">
+      <label id="tiebreak-label">Trykk i den rekkefølgen de skal stå</label>
+      <div id="tiebreak-list"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:0.5rem;">
+      <button class="btn-ghost" style="flex:1;" onclick="hideTiebreakDialog()">Avbryt</button>
+      <button class="btn-full" style="flex:2;" id="tiebreak-save-btn" onclick="saveTiebreak()">Lagre</button>
+    </div>
+    <button class="btn-ghost btn-full mt1" id="tiebreak-clear-btn" style="display:none;" onclick="clearTiebreak()">Fjern avgjørelsen</button>
   </div>
 </div>
 

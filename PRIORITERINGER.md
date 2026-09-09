@@ -142,8 +142,11 @@ ferdigsignerte resultater.
 
 ### 27. Formatet er låst til to grupper
 **Under arbeid:** `PLAN-GRUPPER.md` gjør antallet valgbart (1, 2 eller 4).
-Steg 1 ligger i `6369ca8`. Cup-bracket for vilkårlig størrelse og seeding på
-tvers står fortsatt åpent.
+Steg 1 ligger i `6369ca8`. Sluttspillet er nå en ekte bracket som bygges av
+antall grupper × antall videre (se «Videre fra hver gruppe» nederst) — det som
+står igjen er seeding på tvers av grupper (i dag pares gruppene vilkårlig,
+fordi `computeGroups` stokker først) og frikamper når antallet ikke er en
+toerpotens.
 
 ---
 
@@ -155,7 +158,8 @@ tvers står fortsatt åpent.
 likestilte i `calcStandings`: poeng regnet bare på kampene mellom dem. Én verdi
 per spiller, altså transitiv av konstruksjon. Klyngene deles etter de transitive
 nøklene (poeng, seire, målforskjell) og sorteres internt på miniligaen, med
-alfabetisk som siste utgang. Løser også tre like inne i en større gruppe.
+alfabetisk som siste utgang. **Alfabetisk er nå bare fallback fram til noen
+avgjør det — se «Avgjør uavgjort» nederst.** Løser også tre like inne i en større gruppe.
 Advarselen i startdialogen lover ikke lenger trekning. Testet at alle seks
 permutasjoner av en tresykel gir samme rekkefølge.
 
@@ -254,3 +258,61 @@ til 1280×1400 → målte om til alle fire på én side, ingen sidetelling. Endr
 tilbake til 1280×600 → målte korrekt ned til 2 per side igjen, altså
 re-måling begge veier, ikke bare ved første last. `scrollHeight` var lik
 `clientHeight` ved endelig størrelse — ingen usynlig avklipt gruppe.
+
+
+---
+
+## Bygget 9. september, etter ønske
+
+### Avgjør uavgjort — alfabetisk er ikke lenger siste ord
+
+To spillere som står helt likt etter poeng, seire, målforskjell **og** den
+innbyrdes miniligaen kan ikke skilles sportslig. Før avgjorde `localeCompare` i
+stillhet, uten at noen fikk vite det.
+
+Nå melder tabellen fra: gruppekortet får en varselrad — «⚠️ Golf, Hotel og Lima
+står helt likt — resultatene skiller dem ikke» — med en «Avgjør»-knapp. Dialogen
+lar hvem som helst trykke navnene i den rekkefølgen de skal stå. Hvordan det
+avgjøres fysisk (omkamp, stein-saks-papir, myntkast) er opp til dem; appen
+lagrer bare svaret. Med to spillere er det ett trykk: siste navn fylles ut av
+seg selv. Avgjørelsen kan endres eller fjernes etterpå.
+
+Detaljer som er verdt å vite:
+- **Nøkkelen er navnene i klyngen, ikke plasseringen** (`tieKey`). Flytter
+  klyngen seg opp eller ned i tabellen fordi noen andre spiller en kamp, gjelder
+  avgjørelsen fortsatt.
+- **Varselet kommer først når klyngen har spilt ferdig.** Før første kamp står
+  alle på null poeng — teknisk uavgjort, men bare støy.
+- **Avgjørelsen gjelder bare innad i klyngen.** Den kan ikke løfte noen forbi en
+  spiller som faktisk står over dem.
+- **Skrivingen er målrettet** (`tiebreaks/g<gi>/<key>`), ikke hele turneringen,
+  så et resultat som lagres samtidig fra en annen telefon ikke forsvinner.
+- **Nullstilling og ny start tømmer `tiebreaks`** — de gjaldt den forrige
+  trekningen, og ville ellers dukket opp igjen på et tilfeldig par.
+- `renameInTournament` regner nøkkelen ut på nytt ved navnebytte. Samme runde
+  fikset at `playoffResults.home/away` ikke ble omdøpt i det hele tatt — der sto
+  det gamle navnet igjen som finalevinner.
+
+### Videre fra hver gruppe
+
+Nytt valg i startdialogen ved siden av antall grupper: **1**, **2** eller
+**alle**. Vises bare når det finnes mer enn ett lovlig valg.
+
+- **alle** (standard med to grupper) er plasseringsstigen som før: hver
+  tabellplass møter samme plass i den andre gruppa.
+- **1** (standard med fire grupper) er gruppevinnerne, som før.
+- Ellers bygges en ekte bracket av `grupper × videre` kvalifiserte:
+  2×2 og 4×1 gir semifinaler, finale og bronse; 4×2 gir kvartfinaler først.
+
+`advanceCount` klemmer valget ned hvis det ikke går opp: ingen gruppe kan sende
+flere videre enn den har spillere, og antallet kvalifiserte må være en
+toerpotens. En verdi som ikke går opp kan dermed ikke gi en halvbygget bracket.
+`match_0` er fortsatt finalen og `match_1` fortsatt bronse/3.-plass, som
+`podium()` og `isFinished()` hviler på.
+
+Med bare gruppevinnere pares naboer (A mot B, C mot D) som før. Går flere
+videre, speilvendes seedlista, slik at en gruppevinner møter en andreplass fra
+en **annen** gruppe i første runde.
+
+Valget lagres i samme transaksjon som gruppene, så de aldri kan komme i utakt
+om noen melder seg på i samme øyeblikk.
