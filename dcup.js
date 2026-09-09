@@ -1815,6 +1815,7 @@ function showMatchDialog(p1, p2, mode, onResult, r, scoreH, scoreA, hasScore) {
 
 // ===== LIVE DISPLAY =====
 let displayIntervals = [];
+let displayTimers = [];
 let dispEventId = null;
 let dispTournaments = {};
 let dispCurrent = 0;
@@ -1829,6 +1830,8 @@ function exitDisplay() {
   clearReveal();
   displayIntervals.forEach(clearInterval);
   displayIntervals=[];
+  displayTimers.forEach(clearTimeout);
+  displayTimers=[];
   if (dispRef) dispRef.off();
   releaseWakeLock();
   // P2 #21: «Avslutt» sendte deg til forsiden, altså ut av eventet du sto i.
@@ -1901,6 +1904,16 @@ function seedRevealed() {
 
 function checkForReveal() {
   if (!revealSeeded) { seedRevealed(); return; }
+
+  // P2 #13: nullstilles en turnering (eller endres finaleresultatet slik at
+  // det ikke lenger finnes en vinner), skal en ny vinner avsløres på nytt.
+  // Uten dette lå tid-en i settet for alltid og avsløringen kom aldri igjen.
+  // Samme for turneringer som er borte fra eventet.
+  for (const tid of [...revealedWinners]) {
+    const t = dispTournaments[tid];
+    if (!t || !podium(t)) revealedWinners.delete(tid);
+  }
+
   if (revealBusy) return;
   for (const [tid, t] of Object.entries(dispTournaments)) {
     if (t.hideFromDisplay || revealedWinners.has(tid)) continue;
@@ -1977,7 +1990,10 @@ function playReveal(tid) {
   step(7400, () => { eyebrow.textContent = ''; setLine('Vinneren er…'); });
   step(9600, showName);
   step(12200, showPodium);
-  step(reduce ? 9000 : 22000, clearReveal);
+  // P2 #12: kom det en vinner nummer to mens denne spilte, ble den aldri vist
+  // — checkForReveal kjørte bare på snapshot, og der returnerte den med en
+  // gang fordi revealBusy sto. Se etter neste når denne er ferdig.
+  step(reduce ? 9000 : 22000, () => { clearReveal(); checkForReveal(); });
 }
 
 // Enkelt partikkelsystem på canvas. Ingen bibliotek, ingen SVG-baner.
@@ -2072,11 +2088,19 @@ function startDisplayRotation() {
       dispGroupPage = 0;
       dispCurrent = (dispCurrent+1)%tList.length;
     } else {
-      return; // én turnering, én side: ingenting å rullere mellom
+      syncProgressBar(); // én turnering, én side: ingenting å rullere mellom
+      return;
     }
     renderDisplay();
     animateProgressBar(STAY);
   }, STAY));
+
+  // Første side skal ha en levende bar med en gang, ikke først etter 12s.
+  // Litt forsinket fordi sidetellingen måles under første rendring.
+  displayTimers.push(setTimeout(() => {
+    syncProgressBar();
+    if (willRotate()) animateProgressBar(STAY);
+  }, 60));
 }
 
 function animateProgressBar(duration) {
@@ -2136,7 +2160,29 @@ window.addEventListener('resize', () => {
   }, 250);
 });
 
+// P2 #22: fremdriftsbaren lovet «neste om litt». Den ble aldri animert før
+// første rotasjon, og med én turnering på én side kom den rotasjonen aldri —
+// da skal baren ikke stå der i det hele tatt. willRotate() svarer på om det
+// finnes noe å bla til, og syncProgressBar() skjuler eller viser baren etter
+// det. Kalles ved hver rendring, siden både antall turneringer og antall
+// sider kan endre seg mens skjermen står på.
+function willRotate() {
+  const tList = visibleDispTournaments();
+  if (!tList.length) return false;
+  if (tList.length > 1) return true;
+  return groupPages(tList[0][1]) > 1;
+}
+function syncProgressBar() {
+  const bar = document.querySelector('.display-next-bar');
+  if (bar) bar.style.visibility = willRotate() ? 'visible' : 'hidden';
+}
+
 function renderDisplay() {
+  renderDisplayContent();
+  syncProgressBar();
+}
+
+function renderDisplayContent() {
   const tList = visibleDispTournaments();
   if (!tList.length) {
     const msg = Object.keys(dispTournaments).length ? 'Venter på at en turnering skal starte' : 'Ingen turneringer ennå';

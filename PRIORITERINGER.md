@@ -103,8 +103,8 @@ for noe som ikke ble lagret. Nytt forsøk uten feil lykkes. Tre raske klikk på
 
 | # | Sak | Sted |
 |---|---|---|
-| 12 | Andre vinner hoppes over hvis den kommer mens en avsløring spilles — `checkForReveal` kjøres bare på snapshot, aldri etter `clearReveal` | `dcup.js:1430`, `1440` |
-| 13 | `revealedWinners` tømmes ikke når en turnering nullstilles → avsløringen spilles aldri på nytt | `dcup.js:1417` |
+| 12 | ✅ Fikset. Siste steg i `playReveal` kjører `clearReveal()` og deretter `checkForReveal()`, så vinner nummer to spilles av rett etter den første i stedet for å bli borte | `dcup.js` |
+| 13 | ✅ Fikset. `checkForReveal` glemmer en tid som ikke lenger har en pall (nullstilt turnering, endret finaleresultat) eller som er borte fra eventet | `dcup.js` |
 | 14 | ✅ Fikset. `setSyncStatus(status, where)` — `'event'` treffer `#sync-dot`, ellers turneringens. `loadEvent` setter «Kobler…» før lytteren, «Live» ved hvert snapshot og «Frakoblet» i error-callbacken. Begge prikkene starter gule i markupen i stedet for å love «Live» før noe er koblet opp | `index.html`, `dcup.js` |
 | 15 | ✅ Fikset. `openTournament` setter `.value = ''` i stedet | `dcup.js` |
 | 16 | ✅ Fikset. `t-board-input` har fått samme `keydown`-lytter som `t-player-input` | `dcup.js` |
@@ -113,7 +113,7 @@ for noe som ikke ble lagret. Nytt forsøk uten feil lykkes. Tre raske klikk på
 | 19 | ✅ Fikset. `index.html` sjekker `firebase` **og** `firebase.database` før `dcup.js` i det hele tatt injiseres, og viser en forklarende side med «Prøv igjen» i stedet. Verifisert med CDN-en blokkert, med bare app-compat lastet, og normalt | `index.html` |
 | 20 | ✅ Fikset. `<meta name="robots" content="noindex, nofollow">` | `index.html` |
 | 21 | ✅ Fikset. `exitDisplay` går til `?e=<dispEventId>` | `dcup.js` |
-| 22 | Fremdriftsbaren animeres ikke før første rotasjon, og ikke i det hele tatt med bare én turnering | `dcup.js:1587` |
+| 22 | ✅ Fikset. `willRotate()` svarer på om det finnes en neste side eller turnering; `syncProgressBar()` (kalt ved hver rendring) skjuler baren når svaret er nei, og rotasjonen setter i gang animasjonen med en gang i stedet for etter første 12s-runde | `dcup.js` |
 | 23 | ◐ Delvis. `tests.html` har 89 tester over de rene funksjonene. Rendring og alt som rører Firebase er udekket — `renderTournamentView` er skrevet nesten helt om uten en eneste test | `tests.html` |
 
 ---
