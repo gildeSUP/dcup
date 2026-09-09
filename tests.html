@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>dCup — tester</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 900px;
+  margin: 0 auto; padding: 2rem 1rem 4rem; background: #fff; color: #1a1a1a; line-height: 1.5; }
+@media (prefers-color-scheme: dark) { body { background: #1a1a18; color: #f0efe9; } }
+h1 { font-size: 20px; margin: 0 0 0.25rem; }
+#sum { font-size: 14px; opacity: 0.6; margin-bottom: 1.5rem; }
+#sum.ok strong { color: #16a34a; } #sum.bad strong { color: #dc2626; }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.5;
+  margin: 1.75rem 0 0.5rem; }
+.t { display: flex; gap: 0.6rem; padding: 5px 0; font-size: 14px;
+  border-bottom: 0.5px solid rgba(128,128,128,0.2); }
+.t:last-child { border-bottom: none; }
+.t .m { flex-shrink: 0; width: 1.2em; }
+.t.pass .m { color: #16a34a; } .t.fail .m { color: #dc2626; }
+.t.fail { font-weight: 600; }
+.t .why { opacity: 0.6; font-size: 13px; }
+code { font-family: ui-monospace, monospace; font-size: 0.9em;
+  background: rgba(128,128,128,0.12); border-radius: 3px; padding: 1px 4px; }
+</style>
+</head>
+<body>
+
+<h1>dCup — tester</h1>
+<div id="sum">kjører…</div>
+<div id="out"></div>
+
+<!-- boot() treffer showScreen('screen-home'), så elementet må finnes. Uten ?e= i
+     URL-en gjør boot() ingenting annet. -->
+<div id="screen-home" class="screen" style="display:none;"></div>
+
+<script>
+// dcup.js kaller firebase.initializeApp() på toppnivå, så SDK-en må stubbes
+// før fila lastes. Testene rører bare de rene funksjonene.
+window.firebase = {
+  initializeApp() {},
+  database() { return { ref() { return {
+    on(){}, off(){}, once(){ return Promise.resolve({ val: () => null }); },
+    set(){ return Promise.resolve(); }, update(){ return Promise.resolve(); },
+    transaction(){ return Promise.resolve({ committed: false }); },
+    child() { return this; },
+  }; } }; },
+};
+</script>
+<script>
+// Aldri cachet: en test som kjører mot gammel kode gir falsk grønt.
+document.write('<script src="dcup.js?v=' + Date.now() + '"><\/script>');
+</script>
+
+<script>
+const out = document.getElementById('out');
+let pass = 0, fail = 0;
+
+function section(name) { out.insertAdjacentHTML('beforeend', `<h2>${name}</h2>`); }
+function eq(what, actual, expected) {
+  const a = JSON.stringify(actual), e = JSON.stringify(expected);
+  const ok = a === e;
+  ok ? pass++ : fail++;
+  out.insertAdjacentHTML('beforeend',
+    `<div class="t ${ok?'pass':'fail'}"><span class="m">${ok?'✓':'✗'}</span><span>${what}` +
+    (ok ? '' : ` <span class="why">— fikk <code>${a}</code>, ventet <code>${e}</code></span>`) +
+    `</span></div>`);
+}
+function ok(what, cond) { eq(what, !!cond, true); }
+
+// ---------- groupsOf ----------
+section('groupsOf');
+eq('uten groups gir tom liste', groupsOf({}), []);
+eq('array beholdes', groupsOf({groups:[{name:'A',players:['x']}]}),
+   [{name:'A',players:['x'],fixtures:[],results:{}}]);
+eq('objekt med numeriske nøkler blir liste i rekkefølge',
+   groupsOf({groups:{1:{name:'B',players:['b']},0:{name:'A',players:['a']}}}).map(g=>g.name),
+   ['A','B']);
+eq('manglende felt fylles ut', groupsOf({groups:[{name:'A'}]}),
+   [{name:'A',players:[],fixtures:[],results:{}}]);
+
+// ---------- computeGroups ----------
+section('computeGroups');
+const p8 = ['a','b','c','d','e','f','g','h'];
+for (const g of [1,2,3,4]) {
+  const res = computeGroups(p8, g);
+  eq(`${g} grupper gir ${g} bøtter`, res.length, g);
+  ok(`${g} grupper: alle åtte spillere med, ingen dublett`,
+     new Set(res.flatMap(x=>x.players)).size === 8);
+  eq(`${g} grupper: navn A..`, res.map(x=>x.name), ['A','B','C','D'].slice(0,g));
+  ok(`${g} grupper: størrelser skiller maks én`,
+     Math.max(...res.map(x=>x.players.length)) - Math.min(...res.map(x=>x.players.length)) <= 1);
+  ok(`${g} grupper: hver gruppe har alltid navn`, res.every(x=>!!x.name));
+}
+eq('7 spillere på 3 grupper blir 3+2+2', computeGroups(['a','b','c','d','e','f','g'],3).map(x=>x.players.length), [3,2,2]);
+eq('kampantall for 4 på 2 grupper', computeGroups(p8.slice(0,4),2).reduce((n,g)=>n+g.fixtures.length,0), 2);
+eq('default er fortsatt to grupper', computeGroups(p8).length, 2);
+
+// ---------- roundRobin / scheduledFixtures ----------
+section('roundRobin');
+for (const n of [3,4,5,6,7,8]) {
+  const g = Array.from({length:n},(_,i)=>'P'+i);
+  const f = roundRobin(g);
+  eq(`${n} spillere gir n(n-1)/2 kamper`, f.length, n*(n-1)/2);
+  ok(`${n} spillere: hvert par nøyaktig én gang`,
+     new Set(f.map(m=>[...m].sort().join('|'))).size === f.length);
+  // ingen skal spille to kamper rett etter hverandre når det er mulig å unngå
+  let b2b = 0;
+  for (let i=1;i<f.length;i++) if (f[i].some(x=>f[i-1].includes(x))) b2b++;
+  if (n >= 5) eq(`${n} spillere: ingen kamper rygg mot rygg`, b2b, 0);
+}
+
+// ---------- playOrder ----------
+section('playOrder');
+const t3 = { groups: [
+  { name:'A', players:['a1','a2'], fixtures:[['a1','a2']], results:{} },
+  { name:'B', players:['b1','b2'], fixtures:[['b1','b2']], results:{} },
+  { name:'C', players:['c1','c2','c3'], fixtures:[['c1','c2'],['c1','c3'],['c2','c3']], results:{} },
+]};
+eq('gruppene går parallelt: A1, B1, C1, C2, C3',
+   playOrder(t3).map(m=>m.gi), [0,1,2,2,2]);
+eq('idx følger kampnummeret i gruppa', playOrder(t3).map(m=>m.idx), [0,0,0,1,2]);
+eq('uten grupper er spillerekkefølgen tom', playOrder({}), []);
+
+// ---------- matchResult / isPlayed ----------
+section('matchResult');
+const tRes = { groups: [
+  { name:'A', players:['Anna','Emma'], fixtures:[['Anna','Emma']],
+    results: { [fkey(['Anna','Emma'])]: { winner:'a', home:'Anna', away:'Emma' } } },
+  { name:'B', players:['Ola N.','Per'], fixtures:[['Ola N.','Per']], results:{} },
+]};
+eq('finner resultat i riktig gruppe', matchResult(tRes, {gi:0, idx:0, f:['Anna','Emma']}).winner, 'a');
+eq('uspilt kamp gir null', matchResult(tRes, {gi:1, idx:0, f:['Ola N.','Per']}), null);
+eq('ukjent gruppeindeks gir null', matchResult(tRes, {gi:9, idx:0, f:['x','y']}), null);
+eq('isPlayed', [isPlayed(tRes,{gi:0,idx:0,f:['Anna','Emma']}), isPlayed(tRes,{gi:1,idx:0,f:['Ola N.','Per']})], [true,false]);
+
+// ---------- safeKey / fkey ----------
+section('safeKey');
+eq('punktum escapes', safeKey('Ola N.'), 'Ola N~2e');
+eq('skråstrek escapes', safeKey('a/b'), 'a~2fb');
+ok('ingen forbudte tegn igjen', !/[.#$/[\]]/.test(safeKey('Ola. #$ /[]')));
+eq('fkey setter sammen begge navn', fkey(['Ola N.','Per']), 'Ola N~2e|||Per');
+
+// ---------- calcStandings ----------
+section('calcStandings');
+const G = ['A','B','C','D'];
+function res(list, mode) {
+  const o = {};
+  list.forEach(([h,a,hs,as_]) => {
+    const w = hs>as_ ? 'a' : as_>hs ? 'b' : 'draw';
+    o[fkey([h,a])] = { winner:w, loser: w==='a'?a:w==='b'?h:null, home:h, away:a,
+      homeScore: mode==='score'?hs:null, awayScore: mode==='score'?as_:null };
+  });
+  return o;
+}
+const wl = res([['A','B',1,0],['A','C',1,0],['A','D',1,0],['B','C',1,0],['B','D',1,0],['C','D',1,0]]);
+eq('seier gir 3 poeng', calcStandings(G, wl, 'wl').map(r=>r.pts), [9,6,3,0]);
+eq('rekkefølge etter poeng', calcStandings(G, wl, 'wl').map(r=>r.name), ['A','B','C','D']);
+const drawn = res([['A','B',0,0]]);
+eq('uavgjort gir ett poeng hver', calcStandings(['A','B'], drawn, 'wdl').map(r=>r.pts), [1,1]);
+const sc = res([['A','B',5,0],['A','C',0,1],['B','C',3,0]], 'score');
+eq('score-modus sorterer på målforskjell', calcStandings(['A','B','C'], sc, 'score', 'high').map(r=>r.name), ['A','B','C']);
+eq('lavest vinner sorterer på total', calcStandings(['A','B','C'], sc, 'score', 'low').map(r=>r.name)[0], 'C');
+eq('tom gruppe gir tom tabell', calcStandings([], {}, 'wl'), []);
+eq('resultat med ukjent spiller ignoreres',
+   calcStandings(['A','B'], { x: { winner:'a', home:'A', away:'Ukjent' } }, 'wl').map(r=>r.p), [0,0]);
+// deterministisk: samme input skal alltid gi samme rekkefølge
+const stable = new Set();
+for (let i=0;i<200;i++) stable.add(calcStandings(G, {}, 'wl').map(r=>r.name).join('|'));
+eq('rekkefølgen er deterministisk uten kamper', stable.size, 1);
+
+// ---------- podium ----------
+section('podium');
+eq('uten grupper er det ingen pall', podium({}), null);
+const oneGroup = { groups:[{ name:'A', players:['A','B','C'], fixtures:[['A','B'],['A','C'],['B','C']],
+  results: res([['A','B',1,0],['A','C',1,0],['B','C',1,0]]) }], mode:'wl' };
+eq('én gruppe: vinneren er tabelltoppen', (podium(oneGroup)||{}).champion, 'A');
+const twoUnfinished = { groups:[
+  { name:'A', players:['A','B'], fixtures:[['A','B']], results:{} },
+  { name:'B', players:['C','D'], fixtures:[['C','D']], results:{} },
+], mode:'wl', playoffResults:{} };
+eq('to grupper uten spilt finale gir ingen pall', podium(twoUnfinished), null);
+
+// ---------- board ----------
+section('boardStandings');
+const board = { format:'board', scoreDir:'low', players:['Ola N.','Kari','Per','Ida'],
+  scores: { [safeKey('Ola N.')]:{name:'Ola N.',score:27,ts:1}, [safeKey('Kari')]:{name:'Kari',score:27,ts:2},
+            [safeKey('Per')]:{name:'Per',score:31,ts:3} } };
+eq('lavest vinner rangerer stigende', boardStandings(board).map(r=>r.name), ['Ola N.','Kari','Per','Ida']);
+eq('delt plassering ved likt resultat', boardStandings(board).map(r=>r.pos), [1,1,3,null]);
+eq('uten score havner nederst', boardStandings(board)[3].score, null);
+eq('høyest vinner snur rekkefølgen',
+   boardStandings({...board, scoreDir:'high'}).map(r=>r.name).slice(0,3), ['Per','Ola N.','Kari']);
+eq('ikke ferdig før alle har levert', isFinished(board), false);
+eq('ferdig når alle har levert',
+   isFinished({...board, scores:{...board.scores, [safeKey('Ida')]:{name:'Ida',score:40,ts:4}}}), true);
+
+// ---------- isStarted / isFinished / isSignupLocked ----------
+section('status');
+eq('ikke startet uten grupper', isStarted({}), false);
+eq('startet når gruppene finnes', isStarted(t3), true);
+eq('poengtavle er startet når én score finnes', isStarted(board), true);
+eq('poengtavle sperres ikke for påmelding', isSignupLocked(board), false);
+eq('gruppespill sperres når det er startet', isSignupLocked(t3), true);
+eq('ferdig når alle kamper er spilt', isFinished(oneGroup), true);
+eq('ikke ferdig med uspilte kamper', isFinished(t3), false);
+
+// ---------- renameInTournament ----------
+section('renameInTournament');
+const before = { groups:[{ name:'A', players:['Ola N.','Per'], fixtures:[['Ola N.','Per']],
+  results: { [fkey(['Ola N.','Per'])]: { winner:'a', loser:'Per', home:'Ola N.', away:'Per' } } }],
+  scores: { [safeKey('Ola N.')]: { name:'Ola N.', score:5 } } };
+const after = renameInTournament(before, 'Ola N.', 'Ola Nordmann');
+eq('navnet byttes i spillerlista', groupsOf(after)[0].players, ['Ola Nordmann','Per']);
+eq('navnet byttes i kampoppsettet', groupsOf(after)[0].fixtures, [['Ola Nordmann','Per']]);
+eq('resultatnøkkelen bygges på nytt', Object.keys(groupsOf(after)[0].results), [fkey(['Ola Nordmann','Per'])]);
+eq('home oppdateres', Object.values(groupsOf(after)[0].results)[0].home, 'Ola Nordmann');
+eq('score-nøkkelen flyttes', Object.keys(after.scores), [safeKey('Ola Nordmann')]);
+eq('gammelt navn finnes ikke igjen', JSON.stringify(after).includes('Ola N.'), false);
+
+// ---------- tournamentHasName ----------
+section('tournamentHasName');
+eq('finner navn i spillerlista', tournamentHasName({players:['Anna']}, 'Anna'), true);
+eq('finner navn i en gruppe selv om det er fjernet fra players', tournamentHasName(t3, 'a1'), true);
+eq('finner navn i resultatene', tournamentHasName(tRes, 'Emma'), true);
+eq('finner navn i poengtavla', tournamentHasName(board, 'Kari'), true);
+eq('ukjent navn gir false', tournamentHasName(t3, 'Ingen'), false);
+
+// ---------- oppsummering ----------
+const sum = document.getElementById('sum');
+sum.className = fail ? 'bad' : 'ok';
+sum.innerHTML = `<strong>${fail ? fail + ' feilet' : 'alle ' + pass + ' passerte'}</strong>` +
+  (fail ? ` · ${pass} passerte` : '');
+document.title = (fail ? '✗ ' : '✓ ') + 'dCup — tester';
+</script>
+</body>
+</html>

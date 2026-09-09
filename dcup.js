@@ -325,8 +325,9 @@ function renderTournamentList() {
       const scored = players.filter(n => typeof ((t.scores||{})[safeKey(n)]||{}).score === 'number').length;
       progress = players.length ? `${scored}/${players.length} score` : 'Sett opp';
     } else {
-      const played = Object.values({...t.resultsA||{}, ...t.resultsB||{}}).filter(r=>r.winner).length;
-      const total = (t.fixturesA||[]).length + (t.fixturesB||[]).length;
+      const gs = groupsOf(t);
+      const played = gs.reduce((n,g)=>n+Object.values(g.results).filter(r=>r.winner).length, 0);
+      const total = gs.reduce((n,g)=>n+g.fixtures.length, 0);
       progress = total ? `${played}/${total} spilt` : 'Sett opp';
     }
     return `<div class="tournament-card" onclick="openTournament('${id}')">
@@ -433,9 +434,10 @@ async function removePerson(key) {
 // Alle stedene et navn kan forekomme i en turnering.
 function tournamentHasName(t, name) {
   if ((t.players||[]).includes(name)) return true;
-  if ((t.groupA||[]).includes(name) || (t.groupB||[]).includes(name)) return true;
+  const gs = groupsOf(t);
+  if (gs.some(g => g.players.includes(name))) return true;
   const inResults = r => Object.values(r||{}).some(x => x.home===name || x.away===name);
-  if (inResults(t.resultsA) || inResults(t.resultsB)) return true;
+  if (gs.some(g => inResults(g.results))) return true;
   return Object.values(t.scores||{}).some(sc => sc.name===name);
 }
 
@@ -453,12 +455,12 @@ function renameInTournament(t, oldName, newName) {
   };
   const next = { ...t };
   if (Array.isArray(t.players)) next.players = t.players.map(swap);
-  if (Array.isArray(t.groupA)) next.groupA = t.groupA.map(swap);
-  if (Array.isArray(t.groupB)) next.groupB = t.groupB.map(swap);
-  next.fixturesA = swapFixtures(t.fixturesA);
-  next.fixturesB = swapFixtures(t.fixturesB);
-  next.resultsA = swapResults(t.resultsA);
-  next.resultsB = swapResults(t.resultsB);
+  if (t.groups) next.groups = groupsOf(t).map(g => ({
+    name: g.name,
+    players: g.players.map(swap),
+    fixtures: swapFixtures(g.fixtures),
+    results: swapResults(g.results),
+  }));
   if (t.playoffResults) {
     const out = {};
     Object.entries(t.playoffResults).forEach(([k, r]) => {
@@ -628,8 +630,7 @@ async function addTournament() {
     mode: selectedFormat==='board' ? 'score' : selectedMode,
     format: selectedFormat, scoreDir: selectedScoreDir,
     players,
-    groupA:[], groupB:[], fixturesA:[], fixturesB:[],
-    resultsA:{}, resultsB:{}, playoffResults:{}, scores:{}, created: Date.now()
+    playoffResults:{}, scores:{}, created: Date.now()
   };
   newParticipants.forEach(n => {
     updates['events/'+currentEventId+'/people/'+safeKey(n)] = { name: n, joined: Date.now() };
@@ -800,11 +801,39 @@ function scheduledFixtures(fixtures) {
   return scheduled;
 }
 
-function computeGroups(players) {
+// ===== GRUPPER =====
+// Normaliserer bare form: Firebase kan levere en array som objekt med numeriske
+// nøkler. Ingen bakoverkompatibilitet — databasen er wipet.
+// Invariant: groupsOf(t)[i] svarer til databasestien groups/{i}. Aldri filtrer
+// eller reindekser lista, skrivestiene er indeksbaserte.
+function groupsOf(t) {
+  const g = t.groups;
+  if (!g) return [];
+  const arr = Array.isArray(g) ? g : Object.keys(g).sort((a,b)=>a-b).map(k => g[k]);
+  return arr.map(x => ({
+    name: (x && x.name) || '?',
+    players: (x && x.players) || [],
+    fixtures: (x && x.fixtures) || [],
+    results: (x && x.results) || {},
+  }));
+}
+function resultsPath(gi) { return 'groups/' + gi + '/results'; }
+function groupName(t, gi) { return (groupsOf(t)[gi] || {}).name || '?'; }
+
+// Fargetone per gruppe. Steg 1 bruker bare to; utvides i steg 4.
+const GROUP_TONES = ['accent', 'green', 'amber', 'purple'];
+function groupTone(gi) { return GROUP_TONES[gi % GROUP_TONES.length]; }
+
+// Steg 1 lager fortsatt nøyaktig to grupper — antallet blir valgbart i steg 2.
+function computeGroups(players, g = 2) {
   const s = shuffle(players);
-  const half = Math.ceil(s.length/2);
-  const groupA = s.slice(0,half), groupB = s.slice(half);
-  return { groupA, groupB, fixturesA: roundRobin(groupA), fixturesB: roundRobin(groupB) };
+  const buckets = Array.from({ length: g }, (_, i) => ({
+    // name må alltid være satt: Firebase sletter tomme noder, og en slettet
+    // gruppe ville etterlatt hull i indeksene lista er avhengig av.
+    name: String.fromCharCode(65 + i), players: [],
+  }));
+  s.forEach((p, i) => buckets[i % g].players.push(p));
+  return buckets.map(b => ({ ...b, fixtures: roundRobin(b.players), results: {} }));
 }
 
 // Bruker en transaksjon: den leser turneringen som den faktisk står på
@@ -822,8 +851,7 @@ async function generateTournament() {
       if (!current) return current;
       const players = current.players || [];
       if (players.length < 4) { notEnough = true; return; }
-      const { groupA, groupB, fixturesA, fixturesB } = computeGroups(players);
-      return { ...current, groupA, groupB, fixturesA, fixturesB, resultsA: {}, resultsB: {}, playoffResults: {} };
+      return { ...current, groups: computeGroups(players, 2), playoffResults: {} };
     });
   } catch (err) {
     showToast('Kunne ikke generere — prøv igjen');
@@ -834,10 +862,8 @@ async function generateTournament() {
 
 function resetTournament() {
   if (!confirm('Nullstille turneringen? Dette sletter alle grupper og resultater.')) return;
-  tState.groupA=[]; tState.groupB=[];
-  tState.fixturesA=[]; tState.fixturesB=[];
-  tState.resultsA={}; tState.resultsB={}; tState.playoffResults={};
-  tWrite({ groupA:[], groupB:[], fixturesA:[], fixturesB:[], resultsA:{}, resultsB:{}, playoffResults:{} });
+  tState.groups = null; tState.playoffResults = {};
+  tWrite({ groups: null, playoffResults: {} });
 }
 
 // ===== STANDINGS =====
@@ -854,7 +880,7 @@ function scoreDirOf(t) { return t.scoreDir==='low' ? 'low' : 'high'; }
 // som ikke er i gang ennå, og heller ikke noe som er markert som fullført.
 function isStarted(t) {
   if (isBoard(t)) return Object.keys(t.scores||{}).length > 0;
-  return (t.groupA||[]).length > 0;
+  return groupsOf(t).length > 0;
 }
 
 // Påmeldingssperren gjelder bare gruppespill: der er trekningen gjort, så et
@@ -886,12 +912,28 @@ function podium(t) {
     if (!rows.length) return null;
     return { champion: rows[0].name, runnerUp: (rows[1]||{}).name, third: (rows[2]||{}).name };
   }
+  const dir = scoreDirOf(t);
+  const gs = groupsOf(t);
+  if (!gs.length) return null;
+
+  // Én gruppe: alle møter alle, og tabelltoppen er vinneren. Ingen finale å
+  // spille, så pallen leses rett av tabellen når alt er ferdig.
+  if (gs.length === 1) {
+    if (!isFinished(t)) return null;
+    const rows = calcStandings(gs[0].players, gs[0].results, t.mode, dir);
+    if (!rows.length) return null;
+    return { champion: rows[0].name, runnerUp: (rows[1]||{}).name, third: (rows[2]||{}).name };
+  }
+
+  // Tre eller fire grupper: sluttspillet er ikke definert ennå (fase B), så
+  // ingen kåres. Kjent begrensning, ikke en feil.
+  if (gs.length > 2) return null;
+
   const pr = t.playoffResults || {};
   const fin = pr['match_0'] || {}, bronze = pr['match_1'] || {};
   if (!fin.winner || fin.winner === 'draw') return null;
-  const dir = scoreDirOf(t);
-  const sA = calcStandings(t.groupA||[], t.resultsA||{}, t.mode, dir);
-  const sB = calcStandings(t.groupB||[], t.resultsB||{}, t.mode, dir);
+  const sA = calcStandings((gs[0]||{players:[]}).players, (gs[0]||{results:{}}).results, t.mode, dir);
+  const sB = calcStandings((gs[1]||{players:[]}).players, (gs[1]||{results:{}}).results, t.mode, dir);
   const poName = (i, side) => side==='a' ? (sA[i]||{}).name : side==='b' ? (sB[i]||{}).name : undefined;
   const champion = poName(0, fin.winner);
   if (!champion) return null;
@@ -914,10 +956,9 @@ function winnerBlurb(t, name) {
     if (!diff) return `${me.score}, delt beste resultat av ${rows.length} — men først til å levere.`;
     return `${me.score}, ${diff} ${scoreDirOf(t)==='low'?'mindre':'mer'} enn nestemann av ${rows.length} deltakere.`;
   }
-  const inA = (t.groupA||[]).includes(name);
-  const group = inA ? (t.groupA||[]) : (t.groupB||[]);
-  const results = inA ? (t.resultsA||{}) : (t.resultsB||{});
-  const me = calcStandings(group, results, t.mode, scoreDirOf(t)).find(r => r.name === name);
+  const mine = groupsOf(t).find(g => g.players.includes(name));
+  if (!mine) return 'Seier i finalen.';
+  const me = calcStandings(mine.players, mine.results, t.mode, scoreDirOf(t)).find(r => r.name === name);
   if (!me || !me.p) return 'Seier i finalen.';
   if (!me.l && me.w === me.p) return `Ubeslått gjennom hele gruppespillet — ${me.w} av ${me.p} kamper vunnet, og finalen med.`;
   if (!me.l) return `Ikke tapt en kamp i gruppa på ${me.p} forsøk, og så finalen.`;
@@ -1028,18 +1069,19 @@ function resetBoard() {
   tWrite({ scores: {} });
 }
 
-// Kampene i den rekkefølgen de faktisk spilles: A1, B1, A2, B2 ... Gruppene går parallelt.
+// Kampene i den rekkefølgen de faktisk spilles: A1, B1, C1, A2, B2, C2 ...
+// Gruppene går parallelt.
 function playOrder(t) {
-  const fa=t.fixturesA||[], fb=t.fixturesB||[], order=[];
-  for(let i=0;i<Math.max(fa.length,fb.length);i++) {
-    if(fa[i]) order.push({grp:'a',idx:i,f:fa[i]});
-    if(fb[i]) order.push({grp:'b',idx:i,f:fb[i]});
-  }
+  const gs = groupsOf(t);
+  const max = Math.max(0, ...gs.map(g => g.fixtures.length));
+  const order = [];
+  for (let i = 0; i < max; i++)
+    gs.forEach((g, gi) => { if (g.fixtures[i]) order.push({ gi, idx: i, f: g.fixtures[i] }); });
   return order;
 }
 function matchResult(t, m) {
-  const results = m.grp==='a' ? (t.resultsA||{}) : (t.resultsB||{});
-  return results[fkey(m.f)] || null;
+  const g = groupsOf(t)[m.gi];
+  return g ? (g.results[fkey(m.f)] || null) : null;
 }
 function isPlayed(t, m) { const r=matchResult(t,m); return !!(r&&r.winner); }
 function lastPlayed(t) {
@@ -1049,7 +1091,6 @@ function lastPlayed(t) {
   // dermed tilbake på spillerekkefølgen, som er nærmeste tilgjengelige sannhet.
   return played.reduce((a,b)=>(b.r.ts||0)>=(a.r.ts||0)?b:a);
 }
-function nextUp(t) { return playOrder(t).find(m=>!isPlayed(t,m)) || null; }
 
 function calcStandings(group, results, mode, dir) {
   mode = mode || tState.mode;
@@ -1104,32 +1145,27 @@ function renderTournamentView() {
     return;
   }
   document.getElementById('t-board').style.display = 'none';
-  const has = (tState.groupA||[]).length > 0;
+  const has = groupsOf(tState).length > 0;
   document.getElementById('t-setup').style.display = has?'none':'block';
   document.getElementById('t-main').style.display = has?'block':'none';
   if (!has) { renderTPlayers(); return; }
 
   // Groups
-  const gA = tState.groupA||[], gB = tState.groupB||[];
-  document.getElementById('t-groups-grid').innerHTML = `
+  const gs = groupsOf(tState);
+  document.getElementById('t-groups-grid').innerHTML = gs.map((g, gi) => `
     <div class="group-card">
-      <div class="group-hdr a">Gruppe A · ${gA.length} spillere</div>
-      ${gA.map(p=>`<div class="group-member">${escapeHTML(p)}</div>`).join('')}
-    </div>
-    <div class="group-card">
-      <div class="group-hdr b">Gruppe B · ${gB.length} spillere</div>
-      ${gB.map(p=>`<div class="group-member">${escapeHTML(p)}</div>`).join('')}
-    </div>`;
+      <div class="group-hdr ${groupTone(gi)}">Gruppe ${escapeHTML(g.name)} · ${g.players.length} spillere</div>
+      ${g.players.map(p=>`<div class="group-member">${escapeHTML(p)}</div>`).join('')}
+    </div>`).join('');
 
   // Fixtures
   const fWrap = document.getElementById('t-fixtures-wrap');
-  fWrap.innerHTML = ['a','b'].map(grp=>{
-    const fixtures = grp==='a'?tState.fixturesA:tState.fixturesB;
-    const results  = grp==='a'?tState.resultsA:tState.resultsB;
-    const played = Object.values(results||{}).filter(r=>r.winner||(typeof r.homeScore==='number'&&typeof r.awayScore==='number')).length;
-    const total = (fixtures||[]).length;
-    const rows = (fixtures||[]).map((f,i)=>{
-      const r = (results||{})[fkey(f)]||{};
+  fWrap.innerHTML = gs.map((g, gi)=>{
+    const fixtures = g.fixtures, results = g.results;
+    const played = Object.values(results).filter(r=>r.winner||(typeof r.homeScore==='number'&&typeof r.awayScore==='number')).length;
+    const total = fixtures.length;
+    const rows = fixtures.map((f,i)=>{
+      const r = results[fkey(f)]||{};
       let badge='';
       if(tState.mode==='score'&&typeof r.homeScore==='number'&&typeof r.awayScore==='number') {
         const cls=r.winner==='a'?'res-a':r.winner==='b'?'res-b':'res-d';
@@ -1138,7 +1174,7 @@ function renderTournamentView() {
       else if(r.winner==='b') badge=`<span class="fix-badge res-b">${escapeHTML(f[1])} vinner</span>`;
       else if(r.winner==='draw') badge=`<span class="fix-badge res-d">Uavgjort</span>`;
       else badge=`<span class="fix-badge res-none">Trykk for å registrere</span>`;
-      return `<div class="fixture-row" onclick="openMatchDialog('${grp}',${i})">
+      return `<div class="fixture-row" onclick="openMatchDialog(${gi},${i})">
         <span class="fix-num">${i+1}.</span>
         <span class="fix-team r">${escapeHTML(f[0])}</span>
         <span class="fix-vs">vs</span>
@@ -1147,9 +1183,9 @@ function renderTournamentView() {
       </div>`;
     }).join('');
     return `<div class="card">
-      <div style="font-weight:700;font-size:14px;color:var(--${grp==='a'?'accent-text':'green-text'});margin-bottom:4px;">Gruppe ${grp.toUpperCase()}</div>
+      <div style="font-weight:700;font-size:14px;color:var(--${groupTone(gi)}-text);margin-bottom:4px;">Gruppe ${escapeHTML(g.name)}</div>
       <div class="prog-label">${played} av ${total} spilt</div>
-      <div class="prog-wrap"><div class="prog-bar" style="width:${total?Math.round(played/total*100):0}%;background:var(--${grp==='a'?'accent':'green'});"></div></div>
+      <div class="prog-wrap"><div class="prog-bar" style="width:${total?Math.round(played/total*100):0}%;background:var(--${groupTone(gi)});"></div></div>
       ${rows}
     </div>`;
   }).join('');
@@ -1158,12 +1194,10 @@ function renderTournamentView() {
   const sWrap = document.getElementById('t-standings-wrap');
   const showGD = tState.mode==='score';
   const showD = tState.mode==='wdl';
-  sWrap.innerHTML = ['a','b'].map(grp=>{
-    const group = grp==='a'?tState.groupA:tState.groupB;
-    const results = grp==='a'?tState.resultsA:tState.resultsB;
-    const rows = calcStandings(group||[], results||{});
+  sWrap.innerHTML = gs.map((g, gi)=>{
+    const rows = calcStandings(g.players, g.results);
     return `<div class="card">
-      <div style="font-weight:700;font-size:14px;color:var(--${grp==='a'?'accent-text':'green-text'});margin-bottom:0.75rem;">Gruppe ${grp.toUpperCase()}</div>
+      <div style="font-weight:700;font-size:14px;color:var(--${groupTone(gi)}-text);margin-bottom:0.75rem;">Gruppe ${escapeHTML(g.name)}</div>
       <table class="stand-table">
         <thead><tr>
           <th style="width:28px;">#</th><th class="name">Spiller</th>
@@ -1187,10 +1221,10 @@ function renderTournamentView() {
   }).join('');
 
   // Playoffs
-  const sA = calcStandings(tState.groupA||[], tState.resultsA||{});
-  const sB = calcStandings(tState.groupB||[], tState.resultsB||{});
+  const sA = calcStandings((gs[0]||{players:[]}).players, (gs[0]||{results:{}}).results);
+  const sB = calcStandings((gs[1]||{players:[]}).players, (gs[1]||{results:{}}).results);
   const pr = tState.playoffResults||{};
-  const size = Math.min(sA.length, sB.length);
+  const size = gs.length === 2 ? Math.min(sA.length, sB.length) : 0;
   // playoffResults lagrer vinnersiden ('a'/'b'), på samme form som gruppespillet
   const poName = (i, side) => side==='a' ? (sA[i]||{}).name : side==='b' ? (sB[i]||{}).name : undefined;
   const pod = podium(tState) || {};
@@ -1243,9 +1277,10 @@ function renderTournamentView() {
 }
 
 // ===== MATCH DIALOG =====
-function openMatchDialog(grp, idx) {
-  const fixtures = grp==='a'?tState.fixturesA:tState.fixturesB;
-  const results  = grp==='a'?tState.resultsA:tState.resultsB;
+function openMatchDialog(gi, idx) {
+  const g = groupsOf(tState)[gi];
+  if (!g) return;
+  const fixtures = g.fixtures, results = g.results;
   const f = fixtures[idx];
   const r = (results||{})[fkey(f)]||{};
   let scoreH = typeof r.homeScore==='number'?r.homeScore:0;
@@ -1256,7 +1291,7 @@ function openMatchDialog(grp, idx) {
     // onResult — skriver kun denne ene kampens resultat, aldri hele
     // turneringen: to ulike kamper kan lagres samtidig uten å krysse hverandre.
     (winner, loser, hs, as_) => {
-      const field = (grp==='a'?'resultsA/':'resultsB/') + fkey(f);
+      const field = resultsPath(gi) + '/' + fkey(f);
       const value = winner===null ? null : {winner,loser,home:f[0],away:f[1],homeScore:hs,awayScore:as_,ts:Date.now()};
       tWrite({ [field]: value });
     },
@@ -1266,8 +1301,9 @@ function openMatchDialog(grp, idx) {
 
 function openPlayoffDialog(idx) {
   if (!tState.playoffResults) tState.playoffResults={};
-  const sA = calcStandings(tState.groupA||[], tState.resultsA||{});
-  const sB = calcStandings(tState.groupB||[], tState.resultsB||{});
+  const gs = groupsOf(tState);
+  const sA = calcStandings((gs[0]||{players:[]}).players, (gs[0]||{results:{}}).results);
+  const sB = calcStandings((gs[1]||{players:[]}).players, (gs[1]||{results:{}}).results);
   const pA = sA[idx] ? sA[idx].name : `A${idx+1}`;
   const pB = sB[idx] ? sB[idx].name : `B${idx+1}`;
   const r = tState.playoffResults['match_'+idx]||{};
@@ -1737,13 +1773,11 @@ function renderDisplayTables(t) {
   const showGD = t.mode==='score';
   const showD = t.mode==='wdl';
   return `<div class="display-grid">
-    ${['a','b'].map(grp=>{
-      const group=grp==='a'?t.groupA:t.groupB;
-      const results=grp==='a'?t.resultsA:t.resultsB;
-      if(!(group||[]).length) return '';
-      const rows=calcStandings(group||[], results||{}, t.mode, scoreDirOf(t));
+    ${groupsOf(t).map(g=>{
+      if(!g.players.length) return '';
+      const rows=calcStandings(g.players, g.results, t.mode, scoreDirOf(t));
       return `<div>
-        <div class="display-group-title">Gruppe ${grp.toUpperCase()}</div>
+        <div class="display-group-title">Gruppe ${escapeHTML(g.name)}</div>
         <table class="display-table">
           <thead><tr>
             <th style="width:30px;">#</th><th class="name">Spiller</th>
@@ -1783,7 +1817,7 @@ function renderDisplaySide(t) {
     <div class="display-card-label">Siste resultat</div>
     ${last
       ? `<div class="display-result-line">${displayMatchLine(t,last.f,last.r)}</div>
-         <div class="display-card-sub">Gruppe ${last.grp.toUpperCase()} · ${order.length-queue.length} av ${order.length} spilt</div>`
+         <div class="display-card-sub">Gruppe ${escapeHTML(groupName(t, last.gi))} · ${order.length-queue.length} av ${order.length} spilt</div>`
       : `<div class="display-result-line" style="opacity:0.3;">—</div>
          <div class="display-card-sub">Ingen kamper spilt ennå</div>`}
   </div>`;
@@ -1795,7 +1829,7 @@ function renderDisplaySide(t) {
           <div class="display-queue-item${i===0?' up-next':''}">
             <span class="display-queue-num">${i===0?'▶':i+1}</span>
             <span class="display-queue-teams">${escapeHTML(m.f[0])}<span class="display-vs">vs</span>${escapeHTML(m.f[1])}</span>
-            <span class="display-queue-grp ${m.grp}">${m.grp.toUpperCase()}</span>
+            <span class="display-queue-grp g${m.gi}">${escapeHTML(groupName(t, m.gi))}</span>
           </div>`).join('')
         + (queue.length>DISP_QUEUE_MAX
             ? `<div class="display-card-sub">+ ${queue.length-DISP_QUEUE_MAX} kamper etter dette</div>` : '')
