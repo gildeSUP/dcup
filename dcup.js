@@ -1875,6 +1875,10 @@ async function loadDisplayScreen(eventId) {
     checkForReveal();
   });
   showScreen('screen-display');
+  // Fyrte lytteren over før skjermen ble aktiv, ble alt tegnet i et skjult
+  // element. Mål og tegn på nytt nå som den faktisk har en høyde.
+  dispPerPage = null;
+  renderDisplay();
   startDisplayRotation();
   requestWakeLock();
 }
@@ -2131,6 +2135,11 @@ function measurePerPage(t, paint) {
     paint(gs.slice(0, per));
     const col = document.getElementById('disp-tables-col');
     if (!col) return per;
+    // Skjermen kan være skjult ennå: loadDisplayScreen registrerer lytteren
+    // før showScreen. Da er clientHeight 0, «alt får plass», og resultatet
+    // ville blitt cachet slik at liveskjermen sluttet å bla. Svar null —
+    // ingen måling å lagre, prøv igjen ved neste rendring.
+    if (!col.clientHeight) return null;
     // Lesing av scrollHeight tvinger layout, så målingen gjelder det som
     // nettopp ble tegnet.
     if (col.scrollHeight <= col.clientHeight + 1) return per;
@@ -2250,11 +2259,14 @@ function renderDisplayContent() {
     dispPerPage = null;
   }
   if (dispPerPage === null) dispPerPage = measurePerPage(t, paint);
+  // Ikke målt ennå (skjermen var skjult): vis alt, og la dispPerPage stå null
+  // så neste rendring måler på nytt.
+  const per = dispPerPage || gs.length;
 
   const pages = groupPages(t);
   if (dispGroupPage >= pages) dispGroupPage = 0;
-  const from = dispGroupPage * dispPerPage;
-  const subset = gs.slice(from, from + dispPerPage);
+  const from = dispGroupPage * per;
+  const subset = gs.slice(from, from + per);
   // Sidetelleren står bare når det faktisk er mer enn én side
   paint(subset, pages > 1 ? ` · side ${dispGroupPage+1} av ${pages}` : '');
 }

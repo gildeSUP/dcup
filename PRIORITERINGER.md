@@ -194,27 +194,25 @@ turnering, kampdialog, meld på, deltakere): mobil er uendret (bunnfestet, rette
 bunnhjørner, full bredde), desktop er sentrert med runde hjørner og 540px.
 `dcup.css?v=` er bumpet til 8 — uten det ville nettleseren servert gammel CSS.
 
-### 33. `#screen-display` er alltid synlig — 100vh tomrom under hver side
+### 33. ✅ Fikset
 
-`.display-layout` setter `display: flex` (`dcup.css:233`) og overstyrer
-`.screen { display: none }` (`dcup.css:28`): samme spesifisitet, men senere i
-fila. Liveskjermen står derfor alltid åpen, rett under den aktive skjermen.
-Målt på 390×800: `document.scrollHeight` er 1600, altså nøyaktig én ekstra
-skjermhøyde med svart under hjemskjermen, som man kan scrolle ned i.
+`.screen.display-layout:not(.active) { display: none; }` — høyere spesifisitet
+enn `.display-layout { display: flex }`, så liveskjermen er skjult overalt
+unntatt når den faktisk er aktiv. På 390×800 gikk `scrollHeight` fra 1600 til
+800: den ekstra svarte skjermhøyden under hjem- og event-skjermen er borte.
 
-Ikke nytt, og maskert av at ingen scroller dit — men det traff offline-skjermen
-i #19, som måtte plasseres først i `body` for å ikke havne under liveskjermen.
+**Målingen er fikset i samme slengen**, som notatet krevde: `measurePerPage`
+returnerer nå `null` i stedet for et tall når `clientHeight` er 0 (skjermen er
+ikke synlig ennå — `loadDisplayScreen` registrerer lytteren før `showScreen`).
+Da caches ingenting, `renderDisplayContent` viser alle gruppene inntil videre,
+og neste rendring måler på nytt. `loadDisplayScreen` nullstiller dessuten
+målingen og tegner én gang til rett etter `showScreen`, så den første ekte
+målingen skjer på et element som har høyde.
 
-**Fiksen ser ut som én linje, men er det ikke:**
-```css
-.screen.display-layout:not(.active) { display: none; }
-```
-`loadDisplayScreen` registrerer `dispRef.on('value')` *før* den kaller
-`showScreen('screen-display')`. Fyrer callbacken før skjermen er aktiv, måler
-`measurePerPage` et skjult element: `clientHeight` er 0, alt «får plass», og
-liveskjermen slutter å bla. Med ekte Firebase fyrer callbacken asynkront og
-rekker det ikke — men det er tilfeldig, ikke garantert. Fiks derfor CSS-en og
-målingen sammen: ikke cache et resultat målt på `clientHeight === 0`.
+**Verifisert:** liveskjermen er `display:none` på hjem- og event-skjermen og
+`display:flex` når den er aktiv, og fyller nøyaktig én skjerm. Sidevisningen
+er regresjonstestet med fire grupper à fem spillere på 1280×720 (2 per side),
+1280×1400 (alle fire, ingen sidetelling) og tilbake til 1280×600 (2 per side).
 
 ### 32. ✅ Fikset
 
