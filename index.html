@@ -291,6 +291,18 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
 .chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; }
 .chip.live { background: var(--green-bg); color: var(--green-text); }
+.me-chip { font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 20px; background: var(--accent-bg); color: var(--accent-text); }
+.signup-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 0.5px solid var(--border); cursor: pointer; }
+.signup-row:last-child { border-bottom: none; }
+.signup-row.locked { opacity: 0.45; cursor: default; }
+.signup-row input { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--accent); }
+.join-icon { font-size: 20px; }
+.join-info { display: flex; flex-direction: column; }
+.join-name-txt { font-size: 14px; font-weight: 600; }
+.join-sub { font-size: 11px; color: var(--text2); }
+.tc-join { font-size: 11px; font-weight: 600; padding: 4px 9px; border-radius: 20px; border: 0.5px solid var(--border2); background: var(--bg2); color: var(--text2); cursor: pointer; flex-shrink: 0; }
+.tc-join.on { background: var(--accent-bg); border-color: var(--accent); color: var(--accent-text); }
+.tc-join:disabled { opacity: 0.4; cursor: default; }
 .copy-btn { font-size: 12px; padding: 5px 10px; border-radius: var(--radius); border: 0.5px solid var(--border2); background: var(--bg2); color: var(--text2); cursor: pointer; }
 .copy-btn:hover { color: var(--text); background: var(--bg3); }
 
@@ -351,6 +363,8 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
       <div class="muted" id="event-desc-display" style="font-size:12px;"></div>
     </div>
     <div class="header-right">
+      <span class="me-chip" id="me-chip" style="display:none;"></span>
+      <button class="copy-btn" id="join-event-btn" onclick="showJoinDialog()">Delta</button>
       <button class="copy-btn" onclick="copyEventLink()">Del link</button>
       <div style="display:flex;align-items:center;gap:5px;">
         <div class="sync-dot" id="sync-dot" style="background:#16a34a;"></div>
@@ -367,6 +381,28 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
     </div>
     <div class="tournament-list" id="tournament-list"></div>
     <button class="add-tournament-btn" onclick="showAddTournament()">+ Legg til turnering</button>
+  </div>
+</div>
+
+<!-- DELTA-MODAL -->
+<div id="join-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:500;align-items:flex-end;justify-content:center;">
+  <div style="background:var(--bg);border-radius:var(--radius-lg) var(--radius-lg) 0 0;width:100%;max-width:540px;padding:1.25rem 1.25rem 2.5rem;animation:slideUp 0.22s ease;">
+    <div style="width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 1rem;"></div>
+    <div style="font-size:16px;font-weight:700;margin-bottom:0.35rem;">Meld deg på</div>
+    <p class="muted mb1">Navnet vises i tabellene og på liveskjermen.</p>
+    <div class="form-group">
+      <label>Navnet ditt</label>
+      <input type="text" id="join-name" placeholder="f.eks. Christian" maxlength="40" />
+      <div class="form-error" id="join-name-error">Skriv inn navnet ditt</div>
+    </div>
+    <div class="form-group">
+      <label>Turneringer</label>
+      <div id="join-list"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:0.5rem;">
+      <button class="btn-ghost" style="flex:1;" onclick="hideJoinDialog()">Avbryt</button>
+      <button class="btn-full" style="flex:2;" id="join-save-btn" onclick="saveJoin()">Lagre</button>
+    </div>
   </div>
 </div>
 
@@ -394,6 +430,10 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
     <div class="form-group" id="scoredir-group" style="display:none;">
       <label>Vinner</label>
       <div class="mode-grid" id="scoredir-grid"></div>
+    </div>
+    <div class="form-group" id="prefill-group" style="display:none;">
+      <label>Legg til deltakere</label>
+      <div id="prefill-list"></div>
     </div>
     <div style="display:flex;gap:8px;margin-top:0.5rem;">
       <button class="btn-ghost" style="flex:1;" onclick="hideAddTournament()">Avbryt</button>
@@ -598,6 +638,20 @@ function selectSport(id) {
   renderSportGrid();
 }
 
+function renderPrefillList() {
+  const people = Object.values(eventPeople).sort((a,b)=>(a.joined||0)-(b.joined||0));
+  const group = document.getElementById('prefill-group');
+  group.style.display = people.length ? 'block' : 'none';
+  if (!people.length) return;
+  document.getElementById('prefill-list').innerHTML = people.map((p,i) => `
+    <label class="signup-row">
+      <input type="checkbox" data-name-idx="${i}" checked />
+      <span class="join-info"><span class="join-name-txt">${escapeHTML(p.name)}</span></span>
+    </label>`).join('');
+  prefillNames = people.map(p=>p.name);
+}
+let prefillNames = [];
+
 function renderFormatGrid() {
   document.getElementById('format-grid').innerHTML = Object.keys(FORMATS).map(f => `
     <button class="mode-btn ${f===selectedFormat?'selected':''}" onclick="selectFormat('${f}')">
@@ -688,14 +742,40 @@ async function doCreateEvent() {
   window.location.href = window.location.pathname + '?e=' + id;
 }
 
+// ===== DELTAKERE =====
+// Hvem du er, husket per event i denne nettleseren. Ingen innlogging:
+// dette er en bekvemmelighet, ikke en identitet vi kan stole på.
+let myName = null;
+let eventPeople = {};
+
+function meKey(eventId) { return 'dcup-me-' + eventId; }
+function loadMe(eventId) {
+  try { myName = localStorage.getItem(meKey(eventId)) || null; }
+  catch (err) { myName = null; }
+}
+function saveMe(eventId, name) {
+  myName = name;
+  try { localStorage.setItem(meKey(eventId), name); } catch (err) {}
+}
+
+// En turnering er startet når trekningen er gjort, eller når noen har
+// levert score på en poengtavle. Da kan man ikke melde seg på lenger.
+function isStarted(t) {
+  if (isBoard(t)) return Object.keys(t.scores||{}).length > 0;
+  return (t.groupA||[]).length > 0;
+}
+function isSignedUp(t, name) { return (t.players||[]).includes(name); }
+
 // ===== LOAD EVENT =====
 let currentEventId = null;
 let eventMeta = {};
 let tournaments = {};
 let eventRef = null;
+let peopleRef = null;
 
 async function loadEvent(eventId, focusTId) {
   currentEventId = eventId;
+  if (peopleRef) peopleRef.off();
   const snap = await db.ref('events/'+eventId+'/meta').once('value');
   const meta = snap.val();
   if (!meta) {
@@ -708,10 +788,18 @@ async function loadEvent(eventId, focusTId) {
   document.getElementById('event-desc-display').textContent = meta.desc || '';
   document.title = meta.name + ' · dCup';
 
+  loadMe(eventId);
+  peopleRef = db.ref('events/'+eventId+'/people');
+  peopleRef.on('value', snap => {
+    eventPeople = snap.val() || {};
+    renderMeChip();
+  });
+
   eventRef = db.ref('events/'+eventId+'/tournaments');
   eventRef.on('value', snap => {
     tournaments = snap.val() || {};
     renderTournamentList();
+    renderMeChip();
     if (focusTId && tournaments[focusTId]) {
       openTournament(focusTId);
     }
@@ -748,8 +836,128 @@ function renderTournamentList() {
         <div class="tc-meta">${sport.label} · ${MODES[t.mode]?.label||t.mode}</div>
       </div>
       <span class="tc-badge ${done?'':'pending'}">${done?'Ferdig':total?played+'/'+total+' spilt':'Sett opp'}</span>
+      ${signupBtn(id, t)}
     </div>`;
   }).join('');
+}
+
+// Skriver bare til players-lista, med transaksjon: tjue mobiler som melder
+// seg på samtidig skal ikke overskrive hverandre slik set(hele turneringen) ville.
+async function setSignup(tid, name, join) {
+  const ref = db.ref('events/'+currentEventId+'/tournaments/'+tid+'/players');
+  try {
+    await ref.transaction(list => {
+      const arr = Array.isArray(list) ? list : [];
+      if (join) return arr.includes(name) ? arr : [...arr, name];
+      return arr.filter(p => p !== name);
+    });
+  } catch (err) {
+    showToast('Kunne ikke lagre påmeldingen — prøv igjen');
+  }
+}
+
+function renderMeChip() {
+  const chip = document.getElementById('me-chip');
+  const btn = document.getElementById('join-event-btn');
+  if (!chip || !btn) return;
+  if (myName) {
+    // Bare navnet: antall påmeldinger står allerede på hvert kort, og
+    // headeren har lite plass på mobil
+    const n = Object.values(tournaments).filter(t => isSignedUp(t, myName)).length;
+    chip.textContent = myName;
+    chip.title = `Påmeldt ${n} ${n===1?'turnering':'turneringer'}`;
+    chip.style.display = 'inline-block';
+    btn.textContent = 'Endre';
+  } else {
+    chip.style.display = 'none';
+    chip.title = '';
+    btn.textContent = 'Delta';
+  }
+}
+
+function showJoinDialog() {
+  document.getElementById('join-name').value = myName || '';
+  document.getElementById('join-name-error').style.display = 'none';
+  renderJoinList();
+  document.getElementById('join-overlay').style.display = 'flex';
+}
+document.getElementById('join-name')?.addEventListener('input', renderJoinList);
+function hideJoinDialog() { document.getElementById('join-overlay').style.display = 'none'; }
+
+// Boksene viser påmeldingene til navnet som står i feltet. Lagre skriver
+// hele påmeldingen for det navnet, så lista må stemme med det navnet —
+// ellers ville tomme bokser meldt noen av.
+function renderJoinList() {
+  const who = (document.getElementById('join-name').value || '').trim();
+  const entries = Object.entries(tournaments);
+  const wrap = document.getElementById('join-list');
+  if (!entries.length) {
+    wrap.innerHTML = '<p class="muted">Ingen turneringer å melde seg på ennå.</p>';
+    return;
+  }
+  wrap.innerHTML = entries.map(([id, t]) => {
+    const sport = SPORTS.find(s=>s.id===t.sport)||SPORTS[SPORTS.length-1];
+    const started = isStarted(t);
+    const on = who && isSignedUp(t, who);
+    return `<label class="signup-row${started?' locked':''}">
+      <input type="checkbox" data-tid="${id}" ${on?'checked':''} ${started?'disabled':''} />
+      <span class="join-icon">${sport.icon}</span>
+      <span class="join-info">
+        <span class="join-name-txt">${escapeHTML(t.name)}</span>
+        <span class="join-sub">${sport.label}${started?' · startet':''}</span>
+      </span>
+    </label>`;
+  }).join('');
+}
+
+async function saveJoin() {
+  const input = document.getElementById('join-name');
+  const name = input.value.trim();
+  const errEl = document.getElementById('join-name-error');
+  if (!name) { errEl.textContent = 'Skriv inn navnet ditt'; errEl.style.display = 'block'; return; }
+  errEl.style.display = 'none';
+
+  const btn = document.getElementById('join-save-btn');
+  btn.disabled = true; btn.textContent = 'Lagrer…';
+
+  // Navnet huskes i denne nettleseren, men bare som bekvemmelighet: det
+  // fyller ut feltet neste gang og lar kortene vise din egen status.
+  // Ingen innlogging, og to like navn er appens minste problem.
+  saveMe(currentEventId, name);
+  try {
+    await db.ref('events/'+currentEventId+'/people/'+safeKey(name))
+      .set({ name, joined: Date.now() });
+    for (const box of document.querySelectorAll('#join-list input[type=checkbox]')) {
+      if (box.disabled) continue;
+      await setSignup(box.dataset.tid, name, box.checked);
+    }
+    showToast('Påmeldingen er lagret');
+    hideJoinDialog();
+  } catch (err) {
+    showToast('Kunne ikke lagre påmeldingen — prøv igjen');
+  }
+  btn.disabled = false; btn.textContent = 'Lagre';
+}
+
+async function toggleSignup(tid) {
+  if (!myName) { showJoinDialog(); return; }
+  const t = tournaments[tid] || {};
+  if (isStarted(t)) { showToast('Turneringen er startet'); return; }
+  await setSignup(tid, myName, !isSignedUp(t, myName));
+}
+
+// Knappen på turneringskortet. event.stopPropagation() hindrer at kortet
+// åpner turneringen når man bare melder seg på.
+function signupBtn(id, t) {
+  const started = isStarted(t);
+  const on = myName && isSignedUp(t, myName);
+  if (started) {
+    return on
+      ? `<span class="tc-join on" title="Du er med">Med</span>`
+      : `<span class="tc-join" title="Turneringen er startet">Startet</span>`;
+  }
+  return `<button class="tc-join${on?' on':''}" onclick="event.stopPropagation();toggleSignup('${id}')">
+    ${on?'Påmeldt ✓':'Meld meg på'}</button>`;
 }
 
 function copyEventLink() {
@@ -763,6 +971,7 @@ function showAddTournament() {
   selectedFormat = 'groups'; selectedScoreDir = 'high';
   renderSportGrid();
   renderFormatGrid();
+  renderPrefillList();
   document.getElementById('t-name').value = '';
   const overlay = document.getElementById('add-tournament-overlay');
   overlay.style.display = 'flex';
@@ -779,7 +988,9 @@ async function addTournament() {
     name, sport: selectedSport,
     mode: selectedFormat==='board' ? 'score' : selectedMode,
     format: selectedFormat, scoreDir: selectedScoreDir,
-    players:[], groupA:[], groupB:[], fixturesA:[], fixturesB:[],
+    players: [...document.querySelectorAll('#prefill-list input:checked')]
+      .map(b => prefillNames[Number(b.dataset.nameIdx)]).filter(Boolean),
+    groupA:[], groupB:[], fixturesA:[], fixturesB:[],
     resultsA:{}, resultsB:{}, playoffResults:{}, scores:{}, created: Date.now()
   });
   hideAddTournament();
