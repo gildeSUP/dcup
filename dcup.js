@@ -687,7 +687,7 @@ function backToEvent() {
 // hele tState med ett set(). Et set() av hele objektet kan overskrive noe
 // en annen bruker nettopp lagret et annet sted i turneringen (en annen
 // kamp, en annen sin score, spillerlista) hvis den lokale kopien er
-// akkurat bakpå — se generateTournament() for samme problem løst med
+// akkurat bakpå — se confirmStart() for samme problem løst med
 // transaction() der skrivingen faktisk avhenger av gjeldende innhold.
 function tWrite(patch) {
   if (!tRef) return;
@@ -757,6 +757,8 @@ function clearTPlayers() {
 
 function renderTPlayers() {
   document.getElementById('t-count').textContent = (tState.players||[]).length;
+  const minEl = document.getElementById('t-min');
+  if (minEl) minEl.textContent = MIN_GROUP;
   document.getElementById('t-player-list').innerHTML = (tState.players||[]).map((p,i)=>
     `<div class="player-tag">${escapeHTML(p)}<button onclick="removeTPlayer(${i})">×</button></div>`
   ).join('');
@@ -802,6 +804,34 @@ function scheduledFixtures(fixtures) {
 }
 
 // ===== GRUPPER =====
+const MIN_GROUP = 3;               // minste spillere per gruppe, og gulv for hele turneringen
+const ALLOWED_GROUPS = [1, 2, 4];  // symmetriske brackets. 3 er utelatt: én gruppevinner
+                                   // måtte fått walkover til finalen, og den fordelen kan
+                                   // ingen regel dele ut rettferdig
+const TARGET_MATCHES = 20;         // forslaget sikter på ≤ så mange kamper
+
+// Lovlige valg: symmetrisk bracket OG nok folk til hver gruppe
+function allowedGroups(n) {
+  return ALLOWED_GROUPS.filter(g => Math.floor(n / g) >= MIN_GROUP);
+}
+function maxGroups(n) {
+  const a = allowedGroups(n);
+  return a.length ? a[a.length - 1] : 0;
+}
+function matchCount(n, g) {
+  const q = Math.floor(n / g), r = n % g;
+  const c = k => k * (k - 1) / 2;
+  return r * c(q + 1) + (g - r) * c(q);
+}
+function suggestGroups(n) {
+  const a = allowedGroups(n);
+  return a.find(g => matchCount(n, g) <= TARGET_MATCHES) ?? a[a.length - 1];
+}
+function groupSizes(n, g) {
+  const q = Math.floor(n / g), r = n % g;
+  return Array.from({ length: g }, (_, i) => i < r ? q + 1 : q);
+}
+
 // Normaliserer bare form: Firebase kan levere en array som objekt med numeriske
 // nøkler. Ingen bakoverkompatibilitet — databasen er wipet.
 // Invariant: groupsOf(t)[i] svarer til databasestien groups/{i}. Aldri filtrer
@@ -824,8 +854,7 @@ function groupName(t, gi) { return (groupsOf(t)[gi] || {}).name || '?'; }
 const GROUP_TONES = ['accent', 'green', 'amber', 'purple'];
 function groupTone(gi) { return GROUP_TONES[gi % GROUP_TONES.length]; }
 
-// Steg 1 lager fortsatt nøyaktig to grupper — antallet blir valgbart i steg 2.
-function computeGroups(players, g = 2) {
+function computeGroups(players, g) {
   const s = shuffle(players);
   const buckets = Array.from({ length: g }, (_, i) => ({
     // name må alltid være satt: Firebase sletter tomme noder, og en slettet
@@ -836,28 +865,116 @@ function computeGroups(players, g = 2) {
   return buckets.map(b => ({ ...b, fixtures: roundRobin(b.players), results: {} }));
 }
 
-// Bruker en transaksjon: den leser turneringen som den faktisk står på
-// serveren akkurat da, ikke den lokale (potensielt utdaterte) tState.
-// Ellers kunne en spiller meldt på i samme øyeblikk som noen trykker
-// "Generer grupper" bli overskrevet/utelatt av et set() av hele objektet
-// basert på en tState uten den ferske påmeldingen.
-async function generateTournament() {
+// ===== START TURNERING =====
+// Antallet grupper velges her, ikke ved opprettelsen: da er deltakerlista ukjent.
+async function startTournament() {
   if (!tRef) return;
-  // Lokal, ikke delt: to overlappende kall nullstilte hverandres flagg, og
-  // «Legg til minst 4 spillere» kunne forsvinne.
-  let notEnough = false;
+  // Ferskt fra serveren, ikke tState: den lokale kopien kan være bakpå etter en
+  // påmelding fra en annen telefon.
+  let players = [];
+  try {
+    const snap = await tRef.child('players').once('value');
+    players = snap.val() || [];
+  } catch (err) {
+    showToast('Kunne ikke hente deltakerlista — prøv igjen');
+    return;
+  }
+  if (players.length < MIN_GROUP) { showToast(`Trenger minst ${MIN_GROUP} deltakere`); return; }
+  showStartDialog(players);
+}
+
+let startPlayers = [];
+let startChoice = 1;
+
+function showStartDialog(players) {
+  startPlayers = players;
+  startChoice = suggestGroups(players.length);
+  renderStartDialog();
+  document.getElementById('start-tournament-overlay').style.display = 'flex';
+  lockBodyScroll();
+}
+function hideStartDialog() {
+  document.getElementById('start-tournament-overlay').style.display = 'none';
+  unlockBodyScroll();
+}
+function selectStartChoice(g) { startChoice = g; renderStartDialog(); }
+
+function renderStartDialog() {
+  const n = startPlayers.length;
+  const allowed = allowedGroups(n);
+  const only = allowed.length === 1;
+
+  document.getElementById('start-sub').textContent = only
+    ? `${n} deltakere · ${allowed[0]} gruppe · ${matchCount(n, allowed[0])} kamper — start?`
+    : `${n} deltakere er påmeldt`;
+
+  // Navnene, ikke bare tallet: dette er siste sjanse til å se at noen mangler
+  document.getElementById('start-players').innerHTML =
+    startPlayers.map(p => `<div class="player-tag">${escapeHTML(p)}</div>`).join('');
+
+  // 3 vises ikke i det hele tatt — den er sperret av designet, ikke av antallet.
+  // De andre vises deaktivert med grunn, ellers ser knappen bare ødelagt ut.
+  document.getElementById('start-choice-group').style.display = only ? 'none' : 'block';
+  if (!only) {
+    document.getElementById('start-choice-grid').innerHTML = ALLOWED_GROUPS.map(g => {
+      const ok = allowed.includes(g);
+      const need = g * MIN_GROUP;
+      return `<button type="button" class="mode-btn ${g===startChoice?'selected':''}"
+        ${ok?'':'disabled title="' + g + ' grupper krever minst ' + need + ' deltakere"'}
+        onclick="selectStartChoice(${g})">
+        <span class="mode-btn-icon">${g}</span>
+        <span class="mode-btn-label">${g===1?'gruppe':'grupper'}</span>
+      </button>`;
+    }).join('');
+    const sizes = groupSizes(n, startChoice);
+    document.getElementById('start-detail').textContent =
+      `${sizes.join(' + ')} · ${matchCount(n, startChoice)} kamper`;
+  }
+
+  // En treergruppe uten uavgjort kan ende i en tresykel som ingen innbyrdes
+  // regel kan løse. I score-modus sorterer målforskjell først, så der er det
+  // ikke noe problem.
+  const warn = document.getElementById('start-warning');
+  const sizes = groupSizes(n, startChoice);
+  const small = sizes.indexOf(MIN_GROUP);
+  if (small !== -1 && (tState.mode === 'wl' || tState.mode === 'wdl')) {
+    warn.style.display = 'block';
+    warn.textContent = `⚠️ Gruppe ${String.fromCharCode(65 + small)} får ${MIN_GROUP} spillere. `
+      + `Ved ${MODES[tState.mode].label} kan tre like resultater ikke skilles — da avgjør trekningen.`;
+  } else {
+    warn.style.display = 'none';
+  }
+}
+
+function confirmStartClicked() { confirmStart(startChoice); }
+
+async function confirmStart(g) {
+  const btn = document.getElementById('start-confirm-btn');
+  btn.disabled = true; btn.textContent = 'Starter…';
+  let rejected = null, made = null;
   try {
     await tRef.transaction(current => {
       if (!current) return current;
       const players = current.players || [];
-      if (players.length < 4) { notEnough = true; return; }
-      return { ...current, groups: computeGroups(players, 2), playoffResults: {} };
+      // Avbryt bare når valget er blitt ulovlig, ikke fordi tallet har endret
+      // seg: 12 → 13 med 4 grupper valgt er helt greit (4/3/3/3).
+      if (!allowedGroups(players.length).includes(g)) { rejected = players.length; return; }
+      made = players.length;
+      return { ...current, groups: computeGroups(players, g), playoffResults: {} };
     });
   } catch (err) {
-    showToast('Kunne ikke generere — prøv igjen');
+    btn.disabled = false; btn.textContent = 'Start';
+    showToast('Kunne ikke starte — prøv igjen');
     return;
   }
-  if (notEnough) showToast('Legg til minst 4 spillere');
+  btn.disabled = false; btn.textContent = 'Start';
+  if (rejected !== null) {
+    startPlayers = Array.from({ length: rejected });
+    showToast(`${rejected} deltakere nå — velg på nytt`);
+    return;
+  }
+  hideStartDialog();
+  showToast(`${g} ${g===1?'gruppe':'grupper'} · ${matchCount(made, g)} kamper`);
 }
 
 function resetTournament() {
@@ -925,8 +1042,7 @@ function podium(t) {
     return { champion: rows[0].name, runnerUp: (rows[1]||{}).name, third: (rows[2]||{}).name };
   }
 
-  // Tre eller fire grupper: sluttspillet er ikke definert ennå (fase B), så
-  // ingen kåres. Kjent begrensning, ikke en feil.
+  // Fire grupper: sluttspillet får semifinaler i steg 3. Til da kåres ingen.
   if (gs.length > 2) return null;
 
   const pr = t.playoffResults || {};
@@ -960,9 +1076,9 @@ function winnerBlurb(t, name) {
   if (!mine) return 'Seier i finalen.';
   const me = calcStandings(mine.players, mine.results, t.mode, scoreDirOf(t)).find(r => r.name === name);
   if (!me || !me.p) return 'Seier i finalen.';
-  if (!me.l && me.w === me.p) return `Ubeslått gjennom hele gruppespillet — ${me.w} av ${me.p} kamper vunnet, og finalen med.`;
+  if (!me.l && me.w === me.p) return `Ubeslått gjennom hele gruppespillet — ${me.w} av ${me.p} ${me.p===1?'kamp':'kamper'} vunnet, og finalen med.`;
   if (!me.l) return `Ikke tapt en kamp i gruppa på ${me.p} forsøk, og så finalen.`;
-  return `${me.w} av ${me.p} kamper vunnet i gruppa, og seier i finalen.`;
+  return `${me.w} av ${me.p} ${me.p===1?'kamp':'kamper'} vunnet i gruppa, og seier i finalen.`;
 }
 
 function toggleDisplayDone() {

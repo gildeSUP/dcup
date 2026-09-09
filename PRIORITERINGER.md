@@ -1,62 +1,19 @@
 # dCup — prioriteringer
 
-Gjennomgang 2026-09-09. Linjereferanser mot `dcup.js` slik den står nå
-(inkludert de ucommittede race-condition-fiksene).
+Gjennomgang 2026-09-09, oppdatert etter `6369ca8`.
+
+**Linjenumrene er fra før gruppe-refaktoreringen og stemmer ikke lenger.**
+Bruk funksjonsnavnene — de er uendret. Nummereringen av punktene ligger fast
+fordi `PLAN-GRUPPER.md` viser til «P0 #5», «P1 #6» og «P2 #23».
 
 ---
 
 ## P0 — bør fikses før neste event
 
-### 1. Deltakernavn injiseres rått i `onclick` (XSS + døde knapper)
-`renderPeopleList` (`dcup.js:381`) og `renderPrefillList` (`dcup.js:121`) putter
-`safeKey(navn)` rett inn i en HTML-attributt. `safeKey` escaper bare `. # $ / [ ]`
-— ikke `'` eller `"`.
-
-```
-"O'Brien"            -> onclick="renamePerson('O'Brien')"        // knappen dør
-'Ola "Tiger" N'      -> onclick="renamePerson('Ola "Tiger" N')"  // bryter ut av attributten
-"x');alert(1);('"    -> kjører alert(1) ved klikk
-```
-
-Hvem som helst med event-linken kan melde på en deltaker med et slikt navn.
-Resten av koden løste dette ved å sende **indeks** i stedet for navn (se
-`renderBoard`, `dcup.js:939`) — gjør det samme her, eller bytt til
-`data-key` + `addEventListener`.
-
-### 2. Direktelenke til turnering (`?e=…&t=…`) kaster deg tilbake ved hver endring
-`dcup.js:289` kaller `openTournament(focusTId)` inne i `eventRef.on('value')`.
-Den callbacken fyrer på **hver eneste endring** i hele eventet. Konsekvens for
-alle som åpnet en turneringslenke direkte:
-
-- står du på «Kamper» og noen registrerer et resultat → du kastes til «Grupper»
-  (`openTournament` avslutter med `switchTTab('groups')`)
-- går du tilbake til eventlista → neste endring drar deg inn i turneringen igjen
-- listeneren rives ned og settes opp på nytt hver gang
-
-Fiks: nullstill `focusTId` etter første bruk.
-
-### 3. Tap utenfor score-dialogen lagrer 0–0
-`dcup.js:1318`: klikk på bakgrunnen kaller `saveScore()`, som leser tomme felt
-som `0`. Åpner du en kamp ved et uhell og tapper utenfor for å lukke, registreres
-et 0–0 uavgjort. Bør bare lagre hvis noe faktisk er tastet inn (`hs`-flagget
-finnes allerede, det brukes bare ikke i `saveScore`).
-
-### 4. `Math.random()` som siste tiebreak gjør tabellen ustabil
-`dcup.js:1066`. Målt på fire spillere i samme gruppe:
-
-| situasjon | antall ulike rekkefølger over 200 rendringer |
-|---|---|
-| ingen kamper spilt | 23 |
-| to spillere 1–0, har ikke møtt hverandre | 4 |
-
-To problemer:
-- **Kosmetisk:** tabellen på liveskjermen stokker om seg selv ved hver
-  oppdatering så lenge folk er likt.
-- **Reelt:** playoff-kortene henter navn fra `sA[i]`/`sB[i]` (`dcup.js:1196`),
-  så «FINALE: Anna vs Cecilie» kan bli «Cecilie vs Anna» mellom to rendringer.
-
-Bytt til en deterministisk siste tiebreak (navn alfabetisk, eller rekkefølgen
-i gruppa).
+### 1–4. ✅ Fikset i `22b7f0a`
+Navn i `onclick` (XSS), `focusTId` som kastet deg tilbake ved hver endring,
+0–0 ved klikk utenfor score-dialogen, og `Math.random()` som tiebreak.
+Numrene beholdes fordi `PLAN-GRUPPER.md` viser til dem.
 
 ### 5. Verifiser Firebase-reglene
 Kan ikke leses av repoet. Sjekk minst at `.read`/`.write` ligger på
@@ -69,6 +26,8 @@ så en tom database ikke kan fylles opp.
 ## P1 — reelle hull
 
 ### 6. Playoff-resultater lagrer side, ikke navn
+**Planlagt:** løses i steg 3 i `PLAN-GRUPPER.md`.
+
 `dcup.js:1254` lagrer `{winner:'a'|'b'}` uten `home`/`away`. Gruppekampene
 lagrer navnene (`dcup.js:1233`). Endrer noen et gruppekampresultat etter at
 finalen er spilt, endres tabellen — og dermed hvem `podium()` mener vant
@@ -81,12 +40,8 @@ Firebase returnerer dem sortert på tilfeldig streng. `created` finnes allerede
 på hver turnering — sorter på den. Gjelder også rotasjonsrekkefølgen på
 liveskjermen (`visibleDispTournaments`, `dcup.js:1409`).
 
-### 8. Poengtavler låses for påmelding så snart én score er levert
-`isStarted` (`dcup.js:836`) sier at en poengtavle er startet når `scores` ikke
-er tom, og `renderJoinList` (`dcup.js:524`) sperrer startede turneringer.
-Begrunnelsen (trekningen er gjort) gjelder bare grupper — en poengtavle tåler
-fint at noen kommer til underveis, og `addBoardPlayer` inne i turneringen
-tillater det allerede. Inkonsistent: låsen bør bare gjelde `format: 'groups'`.
+### 8. ✅ Fikset i `22b7f0a`
+Ny `isSignupLocked()` — sperren gjelder bare gruppespill.
 
 ### 9. Innskriving i poengtavla blir slettet av andres oppdateringer
 `renderBoard` (`dcup.js:930`) bytter ut hele `innerHTML`. Kommer det en
@@ -121,7 +76,7 @@ to turneringer.
 | 20 | Event-sider er offentlige og kan indekseres av Google — `<meta name="robots" content="noindex">` | `index.html:6` |
 | 21 | «Avslutt» på liveskjermen går til forsiden, ikke tilbake til eventet | `dcup.js:1386` |
 | 22 | Fremdriftsbaren animeres ikke før første rotasjon, og ikke i det hele tatt med bare én turnering | `dcup.js:1587` |
-| 23 | Ingen tester. Den rene logikken (`calcStandings`, `boardStandings`, `podium`, `scheduledFixtures`, `renameInTournament`) er lett å teste og er akkurat der feilene sitter | — |
+| 23 | ◐ Delvis. `tests.html` har 89 tester over de rene funksjonene. Rendring og alt som rører Firebase er udekket — `renderTournamentView` er skrevet nesten helt om uten en eneste test | `tests.html` |
 
 ---
 
@@ -148,15 +103,42 @@ Riktig for en firmafest, umulig for en konkurranse. Dommerrolle + låsing av
 ferdigsignerte resultater.
 
 ### 27. Formatet er låst til to grupper
-`computeGroups` deler alltid i to (`dcup.js:783`). 20 deltakere gir to grupper
-à 10 = 45 kamper per gruppe. Ingen cup-bracket, ingen puljestørrelse, ingen
-seeding.
+**Under arbeid:** `PLAN-GRUPPER.md` gjør antallet valgbart (1, 2 eller 4).
+Steg 1 ligger i `6369ca8`. Cup-bracket for vilkårlig størrelse og seeding på
+tvers står fortsatt åpent.
 
 ---
 
-## Ucommittet
+## Nye funn
 
-`dcup.js` har ucommittede race-condition-fikser (`setSignup` med avbrutt
-transaksjon, `removePerson`, `renamePerson`-rekkefølge, `clearTPlayers`,
-`saveJoin`). **Disse bør pushes før noe nytt bygges** — de fikser reell
-datatap i produksjon.
+### 28. Innbyrdes oppgjør er ikke transitivt — tresykler får vilkårlig rekkefølge
+`calcStandings` bruker `h2h` som parvis sammenligning. I en tresykel (A slår B,
+B slår C, C slår A) står alle tre likt på poeng og seire, og `h2h` gir
+motstridende svar for hvert par. `Array.sort` med en inkonsistent komparator gir
+da ulikt resultat avhengig av hvilken rekkefølge spillerne ligger i gruppa.
+
+Verifisert mot alle åtte utfall av en treergruppe uten uavgjort: **to av dem er
+sykler**, og hver av dem gir tre forskjellige tabeller. `localeCompare`-fiksen i
+P0 #4 hjelper ikke — koden når aldri dit.
+
+Rekkefølgen er stabil for en gitt turnering, siden trekningen ligger lagret. Men
+den er avgjort av trekningen, ikke av resultatene: **én av fire treergrupper i
+W/T får gruppevinneren utpekt av loddtrekning.** I `score`-modus bryter
+målforskjell sykelen først.
+
+Riktig fiks for tre like inne i en *større* gruppe er å avgjøre på miniligaen
+mellom dem i stedet for parvis. En ren tresykel i en treergruppe kan ikke løses
+sportslig — der er miniligaen hele gruppa. Da er det ærligere å vise delt plass,
+slik `boardStandings` gjør ved lik score.
+
+### 29. Omdøping kan lage to spillere med samme navn
+`renamePerson` sperrer mot kollisjon ved å sjekke `eventPeople`. Men `addTPlayer`
+og `addBoardPlayer` skriver bare til turneringens `players` via `setSignup` —
+aldri til `people`. En spiller lagt til direkte i turneringsoppsettet finnes
+altså ikke i `eventPeople`.
+
+Døp om «Kari» til «Ola» når en annen «Ola» ble lagt til i oppsettet: sjekken
+slipper det gjennom, gruppa får to like navn, og `fkey` kolliderer slik at to
+kamper deler resultatnøkkel. Tabellen blir feil.
+
+Fiksen er å utvide sjekken til alle turneringers `players`, ikke bare `people`.
