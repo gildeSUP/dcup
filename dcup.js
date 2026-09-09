@@ -297,8 +297,10 @@ async function loadEvent(eventId, focusTId) {
   });
 
   eventRef = db.ref('events/'+eventId+'/tournaments');
+  setSyncStatus('connecting', 'event');
   eventRef.on('value', snap => {
     tournaments = snap.val() || {};
+    setSyncStatus('live', 'event');
     renderTournamentList();
     // Bare ved første snapshot. Callbacken fyrer på hver endring i eventet, så
     // uten dette ble man kastet tilbake til «Grupper» hver gang noen
@@ -308,7 +310,7 @@ async function loadEvent(eventId, focusTId) {
       focusTId = null;
       openTournament(tid);
     }
-  });
+  }, () => setSyncStatus('offline', 'event'));
 
   showScreen('screen-event');
   updateEventURL(eventId);
@@ -544,6 +546,10 @@ function showJoinDialog() {
   renderJoinList();
   document.getElementById('join-overlay').style.display = 'flex';
   lockBodyScroll();
+  // P2 #31: å skrive navnet sitt er hele poenget med denne dialogen, så feltet
+  // skal ha fokus. Bare her — i «ny turnering» ville tastaturet dekket
+  // sportsvalget og deltakerlista med en gang.
+  document.getElementById('join-name').focus();
 }
 function hideJoinDialog() { document.getElementById('join-overlay').style.display = 'none'; unlockBodyScroll(); }
 
@@ -684,7 +690,11 @@ function openTournament(id) {
   document.getElementById('t-view-name').textContent = tState.name || '';
   document.getElementById('t-view-sport').textContent = sport.icon + ' ' + sport.label;
   document.getElementById('t-scoring-hint').textContent = MODES[tState.mode]?.hint || '';
-  document.getElementById('t-board-input')?.setAttribute('value','');
+  // P2 #15: setAttribute('value','') endrer bare default-verdien og tømmer
+  // ikke et felt noen har skrevet i — navnet ble stående når man byttet
+  // turnering.
+  const boardInput = document.getElementById('t-board-input');
+  if (boardInput) boardInput.value = '';
 
   // Update URL
   const url = new URL(window.location.href);
@@ -693,6 +703,10 @@ function openTournament(id) {
 
   // Live listener
   if (tRef) tRef.off();
+  // Settes før lytteren registreres: fyrer den første callbacken med en gang
+  // (hurtigbufret verdi), overskrev «Kobler…» det ferske «Live» og prikken ble
+  // stående gul på en tilkobling som var i orden.
+  setSyncStatus('connecting');
   tRef = db.ref('events/'+currentEventId+'/tournaments/'+id);
   tRef.on('value', snap => {
     const data = snap.val();
@@ -703,7 +717,6 @@ function openTournament(id) {
     setSyncStatus('live');
   }, () => setSyncStatus('offline'));
 
-  setSyncStatus('connecting');
   showScreen('screen-tournament');
   if (!isBoard(tState)) switchTTab('groups');
 }
@@ -729,9 +742,14 @@ function tWrite(patch) {
   });
 }
 
-function setSyncStatus(s) {
-  const dot = document.getElementById('t-sync-dot');
-  const label = document.getElementById('t-sync-label');
+// P2 #14: prikken finnes både på event- og turneringsskjermen, men bare
+// turneringens ble oppdatert — eventets sto hardkodet grønn og løy om at alt
+// var i orden mens telefonen var frakoblet. Skjermene har hver sin lytter
+// (eventet på tournaments-noden, turneringen på sin egen), så de settes hver
+// for seg via `where`.
+function setSyncStatus(s, where) {
+  const dot = document.getElementById(where === 'event' ? 'sync-dot' : 't-sync-dot');
+  const label = document.getElementById(where === 'event' ? 'sync-label' : 't-sync-label');
   if (!dot) return;
   if (s==='live') { dot.style.background='#16a34a'; label.textContent='Live'; }
   else if (s==='connecting') { dot.style.background='#d97706'; label.textContent='Kobler…'; }
@@ -797,6 +815,9 @@ function renderTPlayers() {
 }
 
 document.getElementById('t-player-input')?.addEventListener('keydown', e=>{if(e.key==='Enter')addTPlayer();});
+// P2 #16: samme oppførsel i poengtavlas navnefelt, som var det eneste av de
+// tre feltene der Enter ikke gjorde noe.
+document.getElementById('t-board-input')?.addEventListener('keydown', e=>{if(e.key==='Enter')addBoardPlayer();});
 
 // ===== GENERATE =====
 function shuffle(arr) {
@@ -1787,8 +1808,32 @@ function exitDisplay() {
   displayIntervals.forEach(clearInterval);
   displayIntervals=[];
   if (dispRef) dispRef.off();
-  window.location.href = window.location.pathname;
+  releaseWakeLock();
+  // P2 #21: «Avslutt» sendte deg til forsiden, altså ut av eventet du sto i.
+  window.location.href = window.location.pathname + (dispEventId ? '?e=' + dispEventId : '');
 }
+
+// ===== SKJERMEN SKAL IKKE SOVNE =====
+// Liveskjermen står på en TV eller en projektor i timevis uten at noen rører
+// den. wakeLock finnes ikke i alle nettlesere (bl.a. ikke iOS-Safari før 16.4),
+// så alt her er «hvis det går, fint» — feiler det, oppfører appen seg som før.
+let wakeLock = null;
+async function requestWakeLock() {
+  if (!('wakeLock' in navigator)) return;
+  try { wakeLock = await navigator.wakeLock.request('screen'); } catch (err) { wakeLock = null; }
+}
+function releaseWakeLock() {
+  if (!wakeLock) return;
+  const w = wakeLock; wakeLock = null;
+  try { w.release(); } catch (err) { /* allerede sluppet */ }
+}
+// Låsen slippes automatisk når fanen skjules (bytte av fane, låst skjerm).
+// Uten dette ville den ikke kommet tilbake når TV-en vekkes igjen.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  if (!document.getElementById('screen-display')?.classList.contains('active')) return;
+  requestWakeLock();
+});
 
 async function loadDisplayScreen(eventId) {
   dispEventId = eventId;
@@ -1806,6 +1851,7 @@ async function loadDisplayScreen(eventId) {
   });
   showScreen('screen-display');
   startDisplayRotation();
+  requestWakeLock();
 }
 
 // Skjuler turneringer som ikke er startet ennå, eller som er markert

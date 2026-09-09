@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<!-- Event-sidene er åpne for alle med linken og inneholder deltakernavn.
+     De skal kunne deles fritt, men ikke ligge søkbare i Google. -->
+<meta name="robots" content="noindex, nofollow" />
 <title>dCup</title>
 <link rel="stylesheet" href="dcup.css?v=9">
 </head>
@@ -81,9 +84,9 @@
       <button class="copy-btn" id="people-count-btn" onclick="showPeopleDialog()" title="Deltakere">👥 0</button>
       <button class="copy-btn" onclick="showJoinDialog()" title="Meld på deltaker">+<span class="btn-label"> Legg til</span></button>
       <button class="copy-btn" onclick="copyEventLink()" title="Del link">🔗<span class="btn-label"> Del link</span></button>
-      <div style="display:flex;align-items:center;gap:5px;" title="Live">
-        <div class="sync-dot" id="sync-dot" style="background:#16a34a;"></div>
-        <span class="sync-label btn-label" id="sync-label">Live</span>
+      <div style="display:flex;align-items:center;gap:5px;">
+        <div class="sync-dot" id="sync-dot" style="background:#d97706;"></div>
+        <span class="sync-label btn-label" id="sync-label">Kobler…</span>
       </div>
     </div>
   </div>
@@ -207,8 +210,8 @@
     </div>
     <div class="header-right">
       <div style="display:flex;align-items:center;gap:5px;">
-        <div class="sync-dot" id="t-sync-dot" style="background:#16a34a;"></div>
-        <span class="sync-label" id="t-sync-label">Live</span>
+        <div class="sync-dot" id="t-sync-dot" style="background:#d97706;"></div>
+        <span class="sync-label" id="t-sync-label">Kobler…</span>
       </div>
     </div>
   </div>

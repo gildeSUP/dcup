@@ -105,14 +105,14 @@ for noe som ikke ble lagret. Nytt forsøk uten feil lykkes. Tre raske klikk på
 |---|---|---|
 | 12 | Andre vinner hoppes over hvis den kommer mens en avsløring spilles — `checkForReveal` kjøres bare på snapshot, aldri etter `clearReveal` | `dcup.js:1430`, `1440` |
 | 13 | `revealedWinners` tømmes ikke når en turnering nullstilles → avsløringen spilles aldri på nytt | `dcup.js:1417` |
-| 14 | Sync-prikken på event-skjermen er hardkodet grønn; `setSyncStatus` rører bare turneringsskjermen | `index.html:63`, `dcup.js:679` |
-| 15 | `t-board-input` tømmes med `setAttribute('value','')` — det tømmer ikke et felt brukeren har skrevet i | `dcup.js:634` |
-| 16 | Enter i poengtavlas navnefelt gjør ingenting (fungerer i de to andre feltene) | `index.html:198` |
+| 14 | ✅ Fikset. `setSyncStatus(status, where)` — `'event'` treffer `#sync-dot`, ellers turneringens. `loadEvent` setter «Kobler…» før lytteren, «Live» ved hvert snapshot og «Frakoblet» i error-callbacken. Begge prikkene starter gule i markupen i stedet for å love «Live» før noe er koblet opp | `index.html`, `dcup.js` |
+| 15 | ✅ Fikset. `openTournament` setter `.value = ''` i stedet | `dcup.js` |
+| 16 | ✅ Fikset. `t-board-input` har fått samme `keydown`-lytter som `t-player-input` | `dcup.js` |
 | 17 | «Ferdig»-merket settes når gruppespillet er ferdig, før finalen er spilt | `dcup.js:843`, `332` |
-| 18 | Liveskjermen lar TV-en sovne — `navigator.wakeLock` er noen få linjer | `dcup.js:1389` |
+| 18 | ✅ Fikset. `requestWakeLock()` ved åpning, `releaseWakeLock()` i `exitDisplay`, og ny forespørsel på `visibilitychange` (låsen slippes automatisk når fanen skjules). Alt i try/catch og bak en `'wakeLock' in navigator`-sjekk — uten støtte oppfører liveskjermen seg nøyaktig som før | `dcup.js` |
 | 19 | ✅ Fikset. `index.html` sjekker `firebase` **og** `firebase.database` før `dcup.js` i det hele tatt injiseres, og viser en forklarende side med «Prøv igjen» i stedet. Verifisert med CDN-en blokkert, med bare app-compat lastet, og normalt | `index.html` |
-| 20 | Event-sider er offentlige og kan indekseres av Google — `<meta name="robots" content="noindex">` | `index.html:6` |
-| 21 | «Avslutt» på liveskjermen går til forsiden, ikke tilbake til eventet | `dcup.js:1386` |
+| 20 | ✅ Fikset. `<meta name="robots" content="noindex, nofollow">` | `index.html` |
+| 21 | ✅ Fikset. `exitDisplay` går til `?e=<dispEventId>` | `dcup.js` |
 | 22 | Fremdriftsbaren animeres ikke før første rotasjon, og ikke i det hele tatt med bare én turnering | `dcup.js:1587` |
 | 23 | ◐ Delvis. `tests.html` har 89 tester over de rene funksjonene. Rendring og alt som rører Firebase er udekket — `renderTournamentView` er skrevet nesten helt om uten en eneste test | `tests.html` |
 
@@ -223,12 +223,15 @@ sonen. «1 gruppe · 6 kamper» havnet midt oppå Lagre-knappen i påmeldingsark
 Ikke ny — den har alltid ligget der — men synlig så snart en toast vises mens en
 dialog er åpen. Løfte toasten når en dialog er åpen, eller vise den øverst.
 
-### 31. Navnefeltet får ikke fokus når dialogen åpnes
+### 31. ✅ Fikset — men bare i «meld på»
 
-`showJoinDialog` tømmer feltet men kaller ikke `focus()`. Samme i
-`showAddTournament` og `showStartDialog`. Merk at `focus()` på iOS bare virker
-i en brukerinitiert hendelse — det er tilfellet her, siden dialogen åpnes av et
-klikk.
+`showJoinDialog` kaller nå `focus()` på navnefeltet. Der er å skrive navnet sitt
+hele poenget med dialogen, og feltet ligger øverst.
+
+**Bevisst ikke gjort i `showAddTournament` og `showStartDialog`:** der ville
+tastaturet på mobil dekket sportsvalget og deltakerlista i det dialogen åpnes,
+og turneringsnavnet er valgfritt (tomt navn gir sportens navn). Fokus der
+gjør dialogen verre å bruke, ikke bedre.
 
 ---
 
