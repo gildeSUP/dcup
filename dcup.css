@@ -137,7 +137,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 .player-tag button:hover { color: var(--red); }
 
 /* ===== GROUPS ===== */
-.groups-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+.groups-grid { display: grid; grid-template-columns: 1fr; gap: 1rem; margin-bottom: 1rem; }
 @media (max-width: 540px) { .groups-grid { grid-template-columns: 1fr; } }
 .group-card { background: var(--bg); border: 0.5px solid var(--border2); border-radius: var(--radius-lg); overflow: hidden; }
 .group-hdr { padding: 0.6rem 1rem; font-size: 13px; font-weight: 600; }
@@ -311,7 +311,14 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 .muted { font-size: 13px; color: var(--text2); }
 .mt1 { margin-top: 1rem; }
 .mb1 { margin-bottom: 1rem; }
-.two-col { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
+/* Kolonnetallet følger antall grupper, satt som data-n ved rendring. Rent
+   auto-fit ga 3 kolonner i 868px, altså 3+1 ved fire grupper. Fire tabeller
+   side om side blir dessuten 217px hver — for smalt for seks kolonner. */
+.two-col { display: grid; grid-template-columns: 1fr; gap: 1rem; }
+@media (min-width: 560px) {
+  .groups-grid:not([data-n="1"]),
+  .two-col:not([data-n="1"]) { grid-template-columns: repeat(2, 1fr); }
+}
 @media (max-width: 540px) { .two-col { grid-template-columns: 1fr; } }
 .board-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 0.5px solid var(--border); }
 .board-row:last-of-type { border-bottom: none; }

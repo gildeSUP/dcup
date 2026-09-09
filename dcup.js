@@ -1390,6 +1390,9 @@ function renderTournamentView() {
 
   // Groups
   const gs = groupsOf(tState);
+  // Kolonnetallet i CSS følger data-n: én gruppe full bredde, ellers 2×2
+  ['t-groups-grid','t-fixtures-wrap','t-standings-wrap'].forEach(id =>
+    document.getElementById(id).dataset.n = gs.length);
   document.getElementById('t-groups-grid').innerHTML = gs.map((g, gi) => `
     <div class="group-card">
       <div class="group-hdr ${groupTone(gi)}">Gruppe ${escapeHTML(g.name)} · ${g.players.length} spillere</div>
