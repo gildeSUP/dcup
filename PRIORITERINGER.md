@@ -179,6 +179,28 @@ turnering, kampdialog, meld på, deltakere): mobil er uendret (bunnfestet, rette
 bunnhjørner, full bredde), desktop er sentrert med runde hjørner og 540px.
 `dcup.css?v=` er bumpet til 8 — uten det ville nettleseren servert gammel CSS.
 
+### 33. `#screen-display` er alltid synlig — 100vh tomrom under hver side
+
+`.display-layout` setter `display: flex` (`dcup.css:233`) og overstyrer
+`.screen { display: none }` (`dcup.css:28`): samme spesifisitet, men senere i
+fila. Liveskjermen står derfor alltid åpen, rett under den aktive skjermen.
+Målt på 390×800: `document.scrollHeight` er 1600, altså nøyaktig én ekstra
+skjermhøyde med svart under hjemskjermen, som man kan scrolle ned i.
+
+Ikke nytt, og maskert av at ingen scroller dit — men det traff offline-skjermen
+i #19, som måtte plasseres først i `body` for å ikke havne under liveskjermen.
+
+**Fiksen ser ut som én linje, men er det ikke:**
+```css
+.screen.display-layout:not(.active) { display: none; }
+```
+`loadDisplayScreen` registrerer `dispRef.on('value')` *før* den kaller
+`showScreen('screen-display')`. Fyrer callbacken før skjermen er aktiv, måler
+`measurePerPage` et skjult element: `clientHeight` er 0, alt «får plass», og
+liveskjermen slutter å bla. Med ekte Firebase fyrer callbacken asynkront og
+rekker det ikke — men det er tilfeldig, ikke garantert. Fiks derfor CSS-en og
+målingen sammen: ikke cache et resultat målt på `clientHeight === 0`.
+
 ### 32. Toasten legger seg oppå knappene i et bunnark på mobil
 
 `.toast` er `position:fixed; bottom:1.5rem`, og et bunnark dekker akkurat den

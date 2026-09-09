@@ -4,9 +4,31 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>dCup</title>
-<link rel="stylesheet" href="dcup.css?v=8">
+<link rel="stylesheet" href="dcup.css?v=9">
 </head>
 <body>
+
+<!-- Vises bare når firebase-skriptene ikke kom gjennom (se skriptet nederst).
+     Ligger som markup, ikke som en streng i JS, så den kan leses og endres
+     som alt annet — og den bruker appens egne klasser, så den ser ut som
+     resten og følger dark mode. -->
+<div id="screen-offline" class="screen center-screen">
+  <div class="center-card">
+    <div class="home-hero" style="margin-bottom:1.5rem;">
+      <span class="home-logo" style="animation:float 3s ease-in-out infinite;">📡</span>
+      <div class="home-title">Får ikke kontakt</div>
+      <div class="home-sub">Nettverket her ser ut til å blokkere tjenesten dCup henter databasen sin fra.</div>
+    </div>
+    <div class="card" style="margin-bottom:1.25rem;">
+      <div class="offline-step"><span class="offline-num">1</span> Slå av wifi og prøv mobildata</div>
+      <div class="offline-step"><span class="offline-num">2</span> Skru av annonseblokkering for denne siden</div>
+      <div class="offline-step"><span class="offline-num">3</span> Prøv en annen nettleser</div>
+    </div>
+    <button class="btn-full" onclick="location.reload()">Prøv igjen</button>
+    <div class="home-divider">blokkert adresse</div>
+    <div class="muted" style="text-align:center;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">cdn.jsdelivr.net</div>
+  </div>
+</div>
 
 <!-- HOME -->
 <div id="screen-home" class="screen center-screen active">
@@ -303,6 +325,7 @@
 <div id="match-dialog-container"></div>
 <div class="toast" id="toast"></div>
 
+
 <script src="https://cdn.jsdelivr.net/npm/firebase@9.23.0/firebase-app-compat.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/firebase@9.23.0/firebase-database-compat.min.js"></script>
 <script>
@@ -312,21 +335,11 @@
   // resten av fila kjører aldri, og brukeren får en side der ingenting
   // reagerer uten et ord om hvorfor. Sjekker begge skriptene: laster bare
   // det første, finnes firebase uten firebase.database.
+  // dcup.css er same-origin og laster fint selv når CDN-en er blokkert, så
+  // feilskjermen kan bruke appens egne klasser — dark mode følger med.
   if (typeof firebase === 'undefined' || !firebase.database) {
-    document.body.innerHTML =
-      '<div style="max-width:420px;margin:15vh auto;padding:0 1.5rem;text-align:center;' +
-      'font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',sans-serif;">' +
-      '<div style="font-size:44px;">📡</div>' +
-      '<h1 style="font-size:20px;margin:0.75rem 0 0.5rem;">Får ikke lastet dCup</h1>' +
-      '<p style="font-size:15px;line-height:1.5;opacity:0.7;margin:0 0 1.25rem;">' +
-      'Nettverket ser ut til å blokkere <code>cdn.jsdelivr.net</code>, som appen ' +
-      'henter databasen sin fra. Dette skjer ofte på gjestenett og med ' +
-      'annonseblokkering.</p>' +
-      '<p style="font-size:15px;line-height:1.5;opacity:0.7;margin:0 0 1.5rem;">' +
-      'Prøv mobildata eller et annet nett.</p>' +
-      '<button onclick="location.reload()" style="padding:12px 20px;border-radius:10px;' +
-      'border:none;background:#2563eb;color:#fff;font-size:15px;font-weight:600;' +
-      'cursor:pointer;font-family:inherit;">Prøv igjen</button></div>';
+    document.querySelectorAll('.screen').forEach(function (s) { s.classList.remove('active'); });
+    document.getElementById('screen-offline').classList.add('active');
     return;
   }
   // Unikt versjonsnummer per sidelast, så en push alltid treffer umiddelbart
