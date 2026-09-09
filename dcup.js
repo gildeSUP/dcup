@@ -1,0 +1,1762 @@
+// ===== FIREBASE =====
+const firebaseConfig = {
+  apiKey: "AIzaSyBq749q2LzqqHuS8zCMf48Yy2Y77wpZuGA",
+  authDomain: "tournament-bracket-gener-e0767.firebaseapp.com",
+  projectId: "tournament-bracket-gener-e0767",
+  storageBucket: "tournament-bracket-gener-e0767.firebasestorage.app",
+  messagingSenderId: "233208130826",
+  appId: "1:233208130826:web:698448adf4c862d3e21ef3",
+  databaseURL: "https://tournament-bracket-gener-e0767-default-rtdb.europe-west1.firebasedatabase.app"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+// ===== UTILS =====
+function escapeHTML(s) {
+  if (!s && s !== 0) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function uuid() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return(c==='x'?r:(r&0x3|0x8)).toString(16);});
+}
+function showToast(msg) {
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2200);
+}
+// Bunn-modalene har sin egen scroll (overflow-y:auto) for langt innhold —
+// uten dette kan siden bak fortsatt scrolle samtidig, som er forvirrende.
+function lockBodyScroll() { document.body.style.overflow = 'hidden'; }
+function unlockBodyScroll() { document.body.style.overflow = ''; }
+
+// ===== SPORTS CONFIG =====
+const SPORTS = [
+  { id:'pingpong', label:'Bordtennis', icon:'🏓', modes:['wl','score'] },
+  { id:'badminton', label:'Badminton', icon:'🏸', modes:['wl','score'] },
+  { id:'football', label:'Fotball', icon:'⚽', modes:['wdl','score'] },
+  { id:'basketball', label:'Basketball', icon:'🏀', modes:['wl','score'] },
+  { id:'tennis', label:'Tennis', icon:'🎾', modes:['wl','score'] },
+  { id:'golf', label:'Golf/Putting', icon:'⛳', modes:['score'] },
+  { id:'billiards', label:'Biljard', icon:'🎱', modes:['wl'] },
+  { id:'hockey', label:'Hockey', icon:'🏒', modes:['wdl','score'] },
+  { id:'volleyball', label:'Volleyball', icon:'🏐', modes:['wl','score'] },
+  { id:'darts', label:'Dart', icon:'🎯', modes:['wl','score'] },
+  { id:'chess', label:'Sjakk', icon:'♟️', modes:['wdl'] },
+  { id:'custom', label:'Annet', icon:'🏆', modes:['wdl','wl','score'] },
+];
+
+const MODES = {
+  wdl: { label:'W / D / T', icon:'🏅', hint:'Seier=3p · Uavgjort=1p · Tap=0p' },
+  wl:  { label:'W / T', icon:'⚡', hint:'Seier=3p · Tap=0p · Ingen uavgjort' },
+  score: { label:'Score', icon:'🔢', hint:'Skriv inn score · Seier=3p · Tap=0p · Rangert på mål+/-' },
+};
+
+const FORMATS = {
+  groups: { label:'Grupper', icon:'🅰️', hint:'Gruppespill med playoff på tvers' },
+  board:  { label:'Poengtavle', icon:'📋', hint:'Én score per spiller · ingen kamper' },
+};
+const SCORE_DIRS = {
+  high: { label:'Høyest vinner', icon:'⬆️' },
+  low:  { label:'Lavest vinner', icon:'⬇️' },
+};
+let selectedSport = 'pingpong';
+let selectedMode = 'wl';
+let selectedFormat = 'groups';
+let selectedScoreDir = 'high';
+
+function renderSportGrid() {
+  document.getElementById('sport-grid').innerHTML = SPORTS.map(s => `
+    <button class="sport-btn ${s.id===selectedSport?'selected':''}" onclick="selectSport('${s.id}')">
+      <span class="sport-btn-icon">${s.icon}</span>
+      <span class="sport-btn-label">${s.label}</span>
+    </button>`).join('');
+  renderModeGrid();
+}
+
+function selectSport(id) {
+  selectedSport = id;
+  const sport = SPORTS.find(s=>s.id===id);
+  if (!sport.modes.includes(selectedMode)) selectedMode = sport.modes[0];
+  renderSportGrid();
+}
+
+const PREFILL_CHOICES = {
+  all:    { label:'Alle deltakere', icon:'👥' },
+  none:   { label:'Ingen', icon:'🚫' },
+  manual: { label:'Velg manuelt', icon:'✅' },
+};
+let prefillChoice = 'all';
+let prefillManualSelected = {};
+// Nye navn lagt til her og nå, mens turneringen opprettes — lagres først
+// (som deltakere og som spillere på turneringen) når "Opprett" trykkes.
+let newParticipants = [];
+
+function renderPrefillGroup() {
+  const people = Object.values(eventPeople).sort((a,b)=>(a.joined||0)-(b.joined||0));
+  const choiceWrap = document.getElementById('prefill-choice-wrap');
+  choiceWrap.style.display = people.length ? 'block' : 'none';
+  if (people.length) {
+    document.getElementById('prefill-choice-grid').innerHTML = Object.keys(PREFILL_CHOICES).map(c => `
+      <button type="button" class="mode-btn ${c===prefillChoice?'selected':''}" onclick="selectPrefillChoice('${c}')">
+        <span class="mode-btn-icon">${PREFILL_CHOICES[c].icon}</span>
+        <span class="mode-btn-label">${PREFILL_CHOICES[c].label}</span>
+      </button>`).join('');
+    renderPrefillList(people);
+  }
+  renderNewParticipantTags();
+}
+
+function selectPrefillChoice(c) {
+  prefillChoice = c;
+  renderPrefillGroup();
+}
+
+function renderPrefillList(people) {
+  const list = document.getElementById('prefill-list');
+  if (prefillChoice !== 'manual') { list.innerHTML = ''; return; }
+  list.innerHTML = people.map(p => {
+    const key = safeKey(p.name);
+    const checked = !!prefillManualSelected[key];
+    return `<label class="signup-row">
+      <input type="checkbox" ${checked?'checked':''} onchange="togglePrefillManual('${key}')" />
+      <span class="join-info"><span class="join-name-txt">${escapeHTML(p.name)}</span></span>
+    </label>`;
+  }).join('');
+}
+
+function togglePrefillManual(key) {
+  if (prefillManualSelected[key]) delete prefillManualSelected[key];
+  else prefillManualSelected[key] = true;
+  renderPrefillList(Object.values(eventPeople).sort((a,b)=>(a.joined||0)-(b.joined||0)));
+}
+
+// Legger til en helt ny deltaker mens man oppretter turneringen — de er
+// alltid med på denne turneringen, uansett alle/ingen/manuelt-valget over,
+// siden det å skrive navnet her er en eksplisitt "legg til"-handling.
+function addNewParticipant() {
+  const input = document.getElementById('new-participant-input');
+  const name = input.value.trim();
+  if (!name) return;
+  const exists = newParticipants.includes(name) || Object.values(eventPeople).some(p=>p.name===name);
+  if (exists) { showToast('Allerede lagt til'); return; }
+  newParticipants.push(name);
+  input.value = '';
+  renderNewParticipantTags();
+}
+document.getElementById('new-participant-input')?.addEventListener('keydown', e=>{
+  if (e.key==='Enter') { e.preventDefault(); addNewParticipant(); }
+});
+
+function removeNewParticipant(i) {
+  newParticipants.splice(i,1);
+  renderNewParticipantTags();
+}
+
+function renderNewParticipantTags() {
+  document.getElementById('new-participant-tags').innerHTML = newParticipants.map((name,i) =>
+    `<div class="player-tag">${escapeHTML(name)}<button onclick="removeNewParticipant(${i})">×</button></div>`
+  ).join('');
+}
+
+function renderFormatGrid() {
+  document.getElementById('format-grid').innerHTML = Object.keys(FORMATS).map(f => `
+    <button class="mode-btn ${f===selectedFormat?'selected':''}" onclick="selectFormat('${f}')">
+      <span class="mode-btn-icon">${FORMATS[f].icon}</span>
+      <span class="mode-btn-label">${FORMATS[f].label}</span>
+    </button>`).join('');
+  // Poengtavla har ingen kamper, så resultatsystem er ikke relevant der
+  document.getElementById('mode-group').style.display = selectedFormat==='board' ? 'none' : 'block';
+  renderScoreDirGrid();
+}
+function selectFormat(f) { selectedFormat = f; renderFormatGrid(); }
+
+function renderScoreDirGrid() {
+  // Retningen betyr noe når det finnes en score å rangere på
+  const relevant = selectedFormat==='board' || selectedMode==='score';
+  document.getElementById('scoredir-group').style.display = relevant ? 'block' : 'none';
+  if (!relevant) return;
+  document.getElementById('scoredir-grid').innerHTML = Object.keys(SCORE_DIRS).map(d => `
+    <button class="mode-btn ${d===selectedScoreDir?'selected':''}" onclick="selectScoreDir('${d}')">
+      <span class="mode-btn-icon">${SCORE_DIRS[d].icon}</span>
+      <span class="mode-btn-label">${SCORE_DIRS[d].label}</span>
+    </button>`).join('');
+}
+function selectScoreDir(d) { selectedScoreDir = d; renderScoreDirGrid(); }
+
+function renderModeGrid() {
+  const sport = SPORTS.find(s=>s.id===selectedSport);
+  document.getElementById('mode-grid').innerHTML = sport.modes.map(m => `
+    <button class="mode-btn ${m===selectedMode?'selected':''}" onclick="selectMode('${m}')">
+      <span class="mode-btn-icon">${MODES[m].icon}</span>
+      <span class="mode-btn-label">${MODES[m].label}</span>
+    </button>`).join('');
+}
+
+function selectMode(m) { selectedMode = m; renderModeGrid(); renderScoreDirGrid(); }
+
+// ===== NAVIGATION =====
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+// ===== HOME =====
+window.addEventListener('DOMContentLoaded', () => {
+  const params = new URLSearchParams(window.location.search);
+  const eventId = params.get('e');
+  const tId = params.get('t');
+  const display = params.get('display');
+
+  if (display && eventId) {
+    loadDisplayScreen(eventId);
+  } else if (eventId) {
+    loadEvent(eventId, tId);
+  } else {
+    showScreen('screen-home');
+  }
+});
+
+function joinEvent() {
+  const val = document.getElementById('join-code').value.trim();
+  const errEl = document.getElementById('join-error');
+  errEl.style.display = 'none';
+
+  // Extract UUID from URL or raw code
+  const match = val.match(/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i);
+  if (!match) { errEl.textContent = 'Ugyldig link eller kode.'; errEl.style.display = 'block'; return; }
+  window.location.href = window.location.pathname + '?e=' + match[0];
+}
+
+// ===== CREATE EVENT =====
+async function doCreateEvent() {
+  const name = document.getElementById('event-name').value.trim();
+  const desc = document.getElementById('event-desc').value.trim();
+  const errEl = document.getElementById('event-name-error');
+  if (!name) { errEl.textContent = 'Skriv inn et navn'; errEl.style.display = 'block'; return; }
+  errEl.style.display = 'none';
+  const btn = document.getElementById('create-event-btn');
+  btn.disabled = true; btn.textContent = 'Oppretter…';
+  const id = uuid();
+  try {
+    await db.ref('events/'+id+'/meta').set({ name, desc, created: Date.now() });
+  } catch (err) {
+    errEl.textContent = 'Kunne ikke opprette event. Sjekk nettforbindelsen og prøv igjen.';
+    errEl.style.display = 'block';
+    btn.disabled = false; btn.textContent = 'Opprett event';
+    return;
+  }
+  window.location.href = window.location.pathname + '?e=' + id;
+}
+
+// ===== DELTAKERE =====
+// Ingen innlogging, ingen "identitet": alle kan melde på alle, når som helst.
+// eventPeople er bare en rullerende liste over navn som er brukt i eventet,
+// til bruk når man skal velge deltakere for en ny turnering.
+let eventPeople = {};
+
+// ===== LOAD EVENT =====
+let currentEventId = null;
+let eventMeta = {};
+let tournaments = {};
+let eventRef = null;
+let peopleRef = null;
+
+async function loadEvent(eventId, focusTId) {
+  currentEventId = eventId;
+  if (peopleRef) peopleRef.off();
+  const snap = await db.ref('events/'+eventId+'/meta').once('value');
+  const meta = snap.val();
+  if (!meta) {
+    alert('Event ikke funnet.');
+    showScreen('screen-home');
+    return;
+  }
+  eventMeta = meta;
+  document.getElementById('event-title').textContent = meta.name;
+  document.getElementById('event-desc-display').textContent = meta.desc || '';
+  document.title = meta.name + ' · dCup';
+
+  peopleRef = db.ref('events/'+eventId+'/people');
+  peopleRef.on('value', snap => {
+    eventPeople = snap.val() || {};
+    renderPeopleCount();
+  });
+
+  eventRef = db.ref('events/'+eventId+'/tournaments');
+  eventRef.on('value', snap => {
+    tournaments = snap.val() || {};
+    renderTournamentList();
+    if (focusTId && tournaments[focusTId]) {
+      openTournament(focusTId);
+    }
+  });
+
+  showScreen('screen-event');
+  updateEventURL(eventId);
+}
+
+function updateEventURL(eventId) {
+  const url = new URL(window.location.href);
+  url.searchParams.set('e', eventId);
+  url.searchParams.delete('t');
+  url.searchParams.delete('display');
+  window.history.replaceState({}, '', url.toString());
+}
+
+function renderTournamentList() {
+  const list = document.getElementById('tournament-list');
+  const entries = Object.entries(tournaments);
+  if (!entries.length) {
+    list.innerHTML = '<div class="muted" style="text-align:center;padding:1rem;">Ingen turneringer ennå. Legg til en!</div>';
+    return;
+  }
+  list.innerHTML = entries.map(([id, t]) => {
+    const sport = SPORTS.find(s=>s.id===t.sport)||SPORTS[SPORTS.length-1];
+    const done = isFinished(t);
+    let progress;
+    if (isBoard(t)) {
+      const players = t.players || [];
+      const scored = players.filter(n => typeof ((t.scores||{})[safeKey(n)]||{}).score === 'number').length;
+      progress = players.length ? `${scored}/${players.length} score` : 'Sett opp';
+    } else {
+      const played = Object.values({...t.resultsA||{}, ...t.resultsB||{}}).filter(r=>r.winner).length;
+      const total = (t.fixturesA||[]).length + (t.fixturesB||[]).length;
+      progress = total ? `${played}/${total} spilt` : 'Sett opp';
+    }
+    return `<div class="tournament-card" onclick="openTournament('${id}')">
+      <span class="tc-icon">${sport.icon}</span>
+      <div class="tc-info">
+        <div class="tc-name">${escapeHTML(t.name)}</div>
+        <div class="tc-meta">${sport.label} · ${MODES[t.mode]?.label||t.mode}</div>
+      </div>
+      <span class="tc-badge ${done?'':'pending'}">${done?'Ferdig':progress}</span>
+    </div>`;
+  }).join('');
+}
+
+// Skriver bare til players-lista, med transaksjon: tjue mobiler som melder
+// seg på samtidig skal ikke overskrive hverandre slik set(hele turneringen) ville.
+async function setSignup(tid, name, join) {
+  const ref = db.ref('events/'+currentEventId+'/tournaments/'+tid+'/players');
+  try {
+    await ref.transaction(list => {
+      const arr = Array.isArray(list) ? list : [];
+      if (join) return arr.includes(name) ? arr : [...arr, name];
+      return arr.filter(p => p !== name);
+    });
+  } catch (err) {
+    showToast('Kunne ikke lagre påmeldingen — prøv igjen');
+  }
+}
+
+function renderPeopleCount() {
+  const btn = document.getElementById('people-count-btn');
+  if (btn) btn.textContent = '👥 ' + Object.keys(eventPeople).length;
+}
+
+function showPeopleDialog() {
+  renderPeopleList();
+  document.getElementById('people-overlay').style.display = 'flex';
+  lockBodyScroll();
+}
+function hidePeopleDialog() { document.getElementById('people-overlay').style.display = 'none'; unlockBodyScroll(); }
+
+function renderPeopleList() {
+  const people = Object.values(eventPeople).sort((a,b)=>(a.joined||0)-(b.joined||0));
+  const wrap = document.getElementById('people-list');
+  if (!people.length) { wrap.innerHTML = '<p class="muted">Ingen deltakere ennå.</p>'; return; }
+  wrap.innerHTML = people.map(p => {
+    const sports = Object.values(tournaments)
+      .filter(t => (t.players||[]).includes(p.name))
+      .map(t => (SPORTS.find(s=>s.id===t.sport)||SPORTS[SPORTS.length-1]).icon);
+    const key = safeKey(p.name);
+    return `<label class="signup-row" style="cursor:default;">
+      <span class="join-icon">🙋</span>
+      <span class="join-info">
+        <span class="join-name-txt">${escapeHTML(p.name)}</span>
+        <span class="join-sub">${sports.length ? sports.join(' ') : 'Ingen turneringer ennå'}</span>
+      </span>
+      <button class="board-edit" title="Rediger navn" onclick="renamePerson('${key}')">✏️</button>
+      <button class="board-del" title="Fjern deltaker" onclick="removePerson('${key}')">×</button>
+    </label>`;
+  }).join('');
+}
+
+// Fjerner personen fra eventet og fra players-lista i alle turneringer de er
+// med i — ellers ville de stått igjen som spiller uten å være i deltakerlista.
+async function removePerson(key) {
+  const p = eventPeople[key];
+  if (!p) return;
+  if (!confirm(`Fjerne ${p.name}? De fjernes også fra turneringene de er med i.`)) return;
+  const updates = {};
+  updates['events/'+currentEventId+'/people/'+key] = null;
+  Object.entries(tournaments).forEach(([tid, t]) => {
+    const current = t.players || [];
+    if (current.includes(p.name)) {
+      updates['events/'+currentEventId+'/tournaments/'+tid+'/players'] = current.filter(n => n !== p.name);
+    }
+  });
+  try {
+    await db.ref().update(updates);
+    showToast('Deltaker fjernet');
+    renderPeopleList();
+  } catch (err) {
+    showToast('Kunne ikke fjerne — prøv igjen');
+  }
+}
+
+// Bytter ut ett navn med et annet overalt det forekommer i en turnering:
+// spillerliste, grupper, kamper, resultater (som har navnet i selve nøkkelen
+// via fkey) og poengtavle-scorer (som har navnet som Firebase-nøkkel). En
+// omdøping berører altså mange sammenhengende felt på én gang, så den går
+// via en transaksjon på hele turneringsdokumentet i stedet for enkeltfelt.
+function renameInTournament(t, oldName, newName) {
+  const swap = n => n === oldName ? newName : n;
+  const swapFixtures = arr => Array.isArray(arr) ? arr.map(f => [swap(f[0]), swap(f[1])]) : arr;
+  const swapResults = results => {
+    if (!results) return results;
+    const out = {};
+    Object.entries(results).forEach(([, r]) => {
+      const renamed = { ...r, home: swap(r.home), away: swap(r.away), loser: r.loser ? swap(r.loser) : r.loser };
+      out[fkey([renamed.home, renamed.away])] = renamed;
+    });
+    return out;
+  };
+  const next = { ...t };
+  if (Array.isArray(t.players)) next.players = t.players.map(swap);
+  if (Array.isArray(t.groupA)) next.groupA = t.groupA.map(swap);
+  if (Array.isArray(t.groupB)) next.groupB = t.groupB.map(swap);
+  next.fixturesA = swapFixtures(t.fixturesA);
+  next.fixturesB = swapFixtures(t.fixturesB);
+  next.resultsA = swapResults(t.resultsA);
+  next.resultsB = swapResults(t.resultsB);
+  if (t.playoffResults) {
+    const out = {};
+    Object.entries(t.playoffResults).forEach(([k, r]) => {
+      out[k] = { ...r, loser: r.loser ? swap(r.loser) : r.loser };
+    });
+    next.playoffResults = out;
+  }
+  if (t.scores) {
+    const out = {};
+    Object.entries(t.scores).forEach(([key, s]) => {
+      const renamedKey = s.name === oldName ? safeKey(newName) : key;
+      out[renamedKey] = s.name === oldName ? { ...s, name: newName } : s;
+    });
+    next.scores = out;
+  }
+  return next;
+}
+
+async function renamePerson(oldKey) {
+  const p = eventPeople[oldKey];
+  if (!p) return;
+  const input = prompt('Nytt navn:', p.name);
+  if (input === null) return;
+  const newName = input.trim();
+  if (!newName || newName === p.name) return;
+  if (Object.values(eventPeople).some(x => x.name === newName)) {
+    showToast('Navnet er allerede i bruk');
+    return;
+  }
+  const newKey = safeKey(newName);
+  const peopleUpdates = {};
+  peopleUpdates['events/'+currentEventId+'/people/'+oldKey] = null;
+  peopleUpdates['events/'+currentEventId+'/people/'+newKey] = { name: newName, joined: p.joined || Date.now() };
+
+  const affectedTids = Object.entries(tournaments)
+    .filter(([, t]) => (t.players||[]).includes(p.name))
+    .map(([tid]) => tid);
+
+  try {
+    await db.ref().update(peopleUpdates);
+    for (const tid of affectedTids) {
+      await db.ref('events/'+currentEventId+'/tournaments/'+tid).transaction(current => {
+        if (!current) return current;
+        return renameInTournament(current, p.name, newName);
+      });
+    }
+    showToast('Navn oppdatert');
+    renderPeopleList();
+  } catch (err) {
+    showToast('Kunne ikke oppdatere navn — prøv igjen');
+  }
+}
+
+function showJoinDialog() {
+  document.getElementById('join-name').value = '';
+  document.getElementById('join-name-error').style.display = 'none';
+  renderJoinList();
+  document.getElementById('join-overlay').style.display = 'flex';
+  lockBodyScroll();
+}
+function hideJoinDialog() { document.getElementById('join-overlay').style.display = 'none'; unlockBodyScroll(); }
+
+// Alle turneringer er haket av som standard — man klikker bort de man ikke
+// vil melde denne personen på.
+function renderJoinList() {
+  const entries = Object.entries(tournaments);
+  const wrap = document.getElementById('join-list');
+  if (!entries.length) {
+    wrap.innerHTML = '<p class="muted">Ingen turneringer å melde seg på ennå.</p>';
+    return;
+  }
+  wrap.innerHTML = entries.map(([id, t]) => {
+    const sport = SPORTS.find(s=>s.id===t.sport)||SPORTS[SPORTS.length-1];
+    // Startede turneringer er sperret: trekningen er gjort, så et nytt navn i
+    // players havner ikke i noen gruppe og ville stått som påmeldt uten å
+    // finnes i tabellen, kampene eller oppsettet.
+    const started = isStarted(t);
+    return `<label class="signup-row${started?' locked':''}">
+      <input type="checkbox" data-tid="${id}" ${started?'disabled':'checked'} />
+      <span class="join-icon">${sport.icon}</span>
+      <span class="join-info">
+        <span class="join-name-txt">${escapeHTML(t.name)}</span>
+        <span class="join-sub">${sport.label}${started?' · startet':''}</span>
+      </span>
+    </label>`;
+  }).join('');
+}
+
+// Alltid additivt: legger navnet til i de valgte turneringene, fjerner aldri
+// noen. Alle kan melde på alle, når som helst — ingen identitet å holde styr på.
+async function saveJoin() {
+  const input = document.getElementById('join-name');
+  const name = input.value.trim();
+  const errEl = document.getElementById('join-name-error');
+  if (!name) { errEl.textContent = 'Skriv inn et navn'; errEl.style.display = 'block'; return; }
+  errEl.style.display = 'none';
+
+  const btn = document.getElementById('join-save-btn');
+  btn.disabled = true; btn.textContent = 'Lagrer…';
+
+  try {
+    await db.ref('events/'+currentEventId+'/people/'+safeKey(name))
+      .update({ name, joined: Date.now() });
+    for (const box of document.querySelectorAll('#join-list input[type=checkbox]')) {
+      if (box.disabled || !box.checked) continue;
+      // Sjekkes på nytt her: turneringen kan ha blitt startet mens dialogen sto åpen
+      if (isStarted(tournaments[box.dataset.tid] || {})) continue;
+      await setSignup(box.dataset.tid, name, true);
+    }
+    showToast('Lagt til!');
+    hideJoinDialog();
+  } catch (err) {
+    showToast('Kunne ikke lagre — prøv igjen');
+  }
+  btn.disabled = false; btn.textContent = 'Lagre';
+}
+
+function copyEventLink() {
+  const url = window.location.origin + window.location.pathname + '?e=' + currentEventId;
+  navigator.clipboard.writeText(url).then(()=>showToast('Link kopiert!'));
+}
+
+// ===== ADD TOURNAMENT =====
+function showAddTournament() {
+  selectedSport = 'pingpong'; selectedMode = 'wl';
+  selectedFormat = 'groups'; selectedScoreDir = 'high';
+  prefillChoice = 'all'; prefillManualSelected = {}; newParticipants = [];
+  renderSportGrid();
+  renderFormatGrid();
+  renderPrefillGroup();
+  document.getElementById('t-name').value = '';
+  document.getElementById('new-participant-input').value = '';
+  const overlay = document.getElementById('add-tournament-overlay');
+  overlay.style.display = 'flex';
+  lockBodyScroll();
+}
+function hideAddTournament() {
+  document.getElementById('add-tournament-overlay').style.display = 'none';
+  unlockBodyScroll();
+}
+
+async function addTournament() {
+  const name = document.getElementById('t-name').value.trim() ||
+    SPORTS.find(s=>s.id===selectedSport)?.label || 'Turnering';
+  const id = uuid();
+  let players = [];
+  if (prefillChoice === 'all') {
+    players = Object.values(eventPeople).map(p=>p.name);
+  } else if (prefillChoice === 'manual') {
+    players = Object.values(eventPeople).filter(p=>prefillManualSelected[safeKey(p.name)]).map(p=>p.name);
+  }
+  newParticipants.forEach(n => { if (!players.includes(n)) players.push(n); });
+
+  // Bevisst IKKE auto-generert: selv med nok spillere skal man alltid
+  // innom oppsettsiden og trykke "Generer grupper" selv — det gir rom
+  // for at flere kan melde seg på før turneringen faktisk settes i gang.
+  const updates = {};
+  updates['events/'+currentEventId+'/tournaments/'+id] = {
+    name, sport: selectedSport,
+    mode: selectedFormat==='board' ? 'score' : selectedMode,
+    format: selectedFormat, scoreDir: selectedScoreDir,
+    players,
+    groupA:[], groupB:[], fixturesA:[], fixturesB:[],
+    resultsA:{}, resultsB:{}, playoffResults:{}, scores:{}, created: Date.now()
+  };
+  newParticipants.forEach(n => {
+    updates['events/'+currentEventId+'/people/'+safeKey(n)] = { name: n, joined: Date.now() };
+  });
+  await db.ref().update(updates);
+  hideAddTournament();
+  openTournament(id);
+}
+
+// ===== TOURNAMENT VIEW =====
+let currentTId = null;
+let tState = {};
+let tRef = null;
+
+function openTournament(id) {
+  currentTId = id;
+  tState = JSON.parse(JSON.stringify(tournaments[id] || {}));
+  const sport = SPORTS.find(s=>s.id===tState.sport)||SPORTS[SPORTS.length-1];
+  document.getElementById('t-view-name').textContent = tState.name || '';
+  document.getElementById('t-view-sport').textContent = sport.icon + ' ' + sport.label;
+  document.getElementById('t-scoring-hint').textContent = MODES[tState.mode]?.hint || '';
+  document.getElementById('t-board-input')?.setAttribute('value','');
+
+  // Update URL
+  const url = new URL(window.location.href);
+  url.searchParams.set('t', id);
+  window.history.replaceState({}, '', url.toString());
+
+  // Live listener
+  if (tRef) tRef.off();
+  tRef = db.ref('events/'+currentEventId+'/tournaments/'+id);
+  tRef.on('value', snap => {
+    const data = snap.val();
+    if (data) {
+      tState = data;
+      renderTournamentView();
+    }
+    setSyncStatus('live');
+  }, () => setSyncStatus('offline'));
+
+  setSyncStatus('connecting');
+  showScreen('screen-tournament');
+  if (!isBoard(tState)) switchTTab('groups');
+}
+
+function backToEvent() {
+  if (tRef) tRef.off();
+  currentTId = null;
+  updateEventURL(currentEventId);
+  showScreen('screen-event');
+}
+
+// Skriver KUN de feltene som faktisk endrer seg (via tRef.update()) — aldri
+// hele tState med ett set(). Et set() av hele objektet kan overskrive noe
+// en annen bruker nettopp lagret et annet sted i turneringen (en annen
+// kamp, en annen sin score, spillerlista) hvis den lokale kopien er
+// akkurat bakpå — se generateTournament() for samme problem løst med
+// transaction() der skrivingen faktisk avhenger av gjeldende innhold.
+function tWrite(patch) {
+  if (!tRef) return;
+  tRef.update(patch).catch(() => {
+    setSyncStatus('offline');
+    showToast('Kunne ikke lagre — prøv igjen');
+  });
+}
+
+function setSyncStatus(s) {
+  const dot = document.getElementById('t-sync-dot');
+  const label = document.getElementById('t-sync-label');
+  if (!dot) return;
+  if (s==='live') { dot.style.background='#16a34a'; label.textContent='Live'; }
+  else if (s==='connecting') { dot.style.background='#d97706'; label.textContent='Kobler…'; }
+  else { dot.style.background='#dc2626'; label.textContent='Frakoblet'; }
+}
+
+function switchTTab(name) {
+  document.querySelectorAll('#screen-tournament .tab').forEach((t,i)=>{
+    t.classList.toggle('active',['groups','fixtures','standings','playoffs'][i]===name);
+  });
+  ['groups','fixtures','standings','playoffs'].forEach(n=>{
+    const el = document.getElementById('ttab-'+n);
+    if (el) el.style.display = n===name?'block':'none';
+  });
+}
+
+// ===== PLAYERS =====
+// addTPlayer/removeTPlayer bruker setSignup() (samme transaksjonsbaserte
+// skriving som "Meld på") i stedet for å sette() hele tState — ellers kunne
+// noen som meldte seg på akkurat da bli overskrevet av en lokalt utdatert kopi.
+// Lokal tState oppdateres først for umiddelbar tilbakemelding i UI-et.
+function addTPlayer() {
+  const input = document.getElementById('t-player-input');
+  const name = input.value.trim();
+  const errEl = document.getElementById('t-player-error');
+  if (!name) return;
+  if ((tState.players||[]).includes(name)) { errEl.textContent='Navn allerede lagt til'; errEl.style.display='block'; return; }
+  errEl.style.display='none';
+  tState.players = [...(tState.players||[]), name];
+  input.value = '';
+  renderTPlayers();
+  setSignup(currentTId, name, true);
+}
+
+function removeTPlayer(i) {
+  const name = tState.players[i];
+  tState.players.splice(i,1);
+  renderTPlayers();
+  if (name !== undefined) setSignup(currentTId, name, false);
+}
+
+function clearTPlayers() {
+  tState.players = [];
+  renderTPlayers();
+  tWrite({ players: [] });
+}
+
+function renderTPlayers() {
+  document.getElementById('t-count').textContent = (tState.players||[]).length;
+  document.getElementById('t-player-list').innerHTML = (tState.players||[]).map((p,i)=>
+    `<div class="player-tag">${escapeHTML(p)}<button onclick="removeTPlayer(${i})">×</button></div>`
+  ).join('');
+}
+
+document.getElementById('t-player-input')?.addEventListener('keydown', e=>{if(e.key==='Enter')addTPlayer();});
+
+// ===== GENERATE =====
+function shuffle(arr) {
+  const a=[...arr];
+  for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}
+  return a;
+}
+function roundRobin(g) {
+  const f=[];
+  for(let i=0;i<g.length-1;i++) for(let j=i+1;j<g.length;j++) f.push([g[i],g[j]]);
+  return scheduledFixtures(f);
+}
+// Sprer kampene: ingen skal spille flere kamper rett etter hverandre, og alle
+// skal ha omtrent like lang pause. Velger hele tiden kampen der begge spillerne
+// har hvilt lengst — likt resultat avgjøres av hvem som har spilt minst.
+function scheduledFixtures(fixtures) {
+  const remaining = shuffle(fixtures);
+  const scheduled = [];
+  const lastSeen = {}, played = {};
+  while (remaining.length) {
+    const slot = scheduled.length;
+    let bestIdx = 0, bestRest = -1, bestLoad = 0;
+    remaining.forEach((f, i) => {
+      const rest = Math.min(slot - (lastSeen[f[0]] ?? -99), slot - (lastSeen[f[1]] ?? -99));
+      const load = (played[f[0]] || 0) + (played[f[1]] || 0);
+      if (rest > bestRest || (rest === bestRest && load < bestLoad)) {
+        bestIdx = i; bestRest = rest; bestLoad = load;
+      }
+    });
+    const f = remaining.splice(bestIdx, 1)[0];
+    scheduled.push(f);
+    lastSeen[f[0]] = lastSeen[f[1]] = slot;
+    played[f[0]] = (played[f[0]] || 0) + 1;
+    played[f[1]] = (played[f[1]] || 0) + 1;
+  }
+  return scheduled;
+}
+
+function computeGroups(players) {
+  const s = shuffle(players);
+  const half = Math.ceil(s.length/2);
+  const groupA = s.slice(0,half), groupB = s.slice(half);
+  return { groupA, groupB, fixturesA: roundRobin(groupA), fixturesB: roundRobin(groupB) };
+}
+
+// Bruker en transaksjon: den leser turneringen som den faktisk står på
+// serveren akkurat da, ikke den lokale (potensielt utdaterte) tState.
+// Ellers kunne en spiller meldt på i samme øyeblikk som noen trykker
+// "Generer grupper" bli overskrevet/utelatt av et set() av hele objektet
+// basert på en tState uten den ferske påmeldingen.
+let generateNotEnough = false;
+async function generateTournament() {
+  if (!tRef) return;
+  generateNotEnough = false;
+  try {
+    await tRef.transaction(current => {
+      if (!current) return current;
+      const players = current.players || [];
+      if (players.length < 4) { generateNotEnough = true; return; }
+      const { groupA, groupB, fixturesA, fixturesB } = computeGroups(players);
+      return { ...current, groupA, groupB, fixturesA, fixturesB, resultsA: {}, resultsB: {}, playoffResults: {} };
+    });
+  } catch (err) {
+    showToast('Kunne ikke generere — prøv igjen');
+    return;
+  }
+  if (generateNotEnough) showToast('Legg til minst 4 spillere');
+}
+
+function resetTournament() {
+  if (!confirm('Nullstille turneringen? Dette sletter alle grupper og resultater.')) return;
+  tState.groupA=[]; tState.groupB=[];
+  tState.fixturesA=[]; tState.fixturesB=[];
+  tState.resultsA={}; tState.resultsB={}; tState.playoffResults={};
+  tWrite({ groupA:[], groupB:[], fixturesA:[], fixturesB:[], resultsA:{}, resultsB:{}, playoffResults:{} });
+}
+
+// ===== STANDINGS =====
+// Firebase-nøkler kan ikke inneholde . # $ / [ ] — spillernavn som "Ola N." må derfor escapes
+function safeKey(s){ return String(s).replace(/[.#$/[\]]/g, c => '~'+c.charCodeAt(0).toString(16)); }
+function fkey(f){return safeKey(f[0])+'|||'+safeKey(f[1]);}
+
+// ===== POENGTAVLE =====
+function isBoard(t) { return (t.format||'groups')==='board'; }
+function scoreDirOf(t) { return t.scoreDir==='low' ? 'low' : 'high'; }
+
+// En turnering regnes som "startet" når trekningen er gjort (grupper), eller
+// når noen har levert score (poengtavle). Liveskjermen skal ikke vise noe
+// som ikke er i gang ennå, og heller ikke noe som er markert som fullført.
+function isStarted(t) {
+  if (isBoard(t)) return Object.keys(t.scores||{}).length > 0;
+  return (t.groupA||[]).length > 0;
+}
+
+// Motstykket til isStarted: alt som skal spilles er spilt. For grupper betyr
+// det alle gruppekamper, for poengtavle at hver deltaker har levert en score.
+// Merk at "ferdig gruppespill" ikke er det samme som "finalen er spilt".
+function isFinished(t) {
+  if (isBoard(t)) {
+    const players = t.players || [];
+    if (!players.length) return false;
+    return players.every(n => typeof ((t.scores||{})[safeKey(n)]||{}).score === 'number');
+  }
+  const order = playOrder(t);
+  if (!order.length) return false;
+  return order.every(m => isPlayed(t, m));
+}
+
+// Pallen for begge formater, delt mellom appen og liveskjermen. Returnerer
+// null når det ikke finnes en vinner ennå — for grupper betyr det at finalen
+// ikke er spilt, for poengtavle at ikke alle har levert score.
+function podium(t) {
+  if (isBoard(t)) {
+    if (!isFinished(t)) return null;
+    const rows = boardStandings(t).filter(r => r.score !== null);
+    if (!rows.length) return null;
+    return { champion: rows[0].name, runnerUp: (rows[1]||{}).name, third: (rows[2]||{}).name };
+  }
+  const pr = t.playoffResults || {};
+  const fin = pr['match_0'] || {}, bronze = pr['match_1'] || {};
+  if (!fin.winner || fin.winner === 'draw') return null;
+  const dir = scoreDirOf(t);
+  const sA = calcStandings(t.groupA||[], t.resultsA||{}, t.mode, dir);
+  const sB = calcStandings(t.groupB||[], t.resultsB||{}, t.mode, dir);
+  const poName = (i, side) => side==='a' ? (sA[i]||{}).name : side==='b' ? (sB[i]||{}).name : undefined;
+  const champion = poName(0, fin.winner);
+  if (!champion) return null;
+  return {
+    champion,
+    runnerUp: fin.winner==='a' ? poName(0,'b') : poName(0,'a'),
+    third: poName(1, bronze.winner),
+  };
+}
+
+// Kommentatorlinja. Alt her er hentet fra faktiske tall — ingen påstander
+// appen ikke kan belegge.
+function winnerBlurb(t, name) {
+  if (isBoard(t)) {
+    const rows = boardStandings(t).filter(r => r.score !== null);
+    const me = rows[0], next = rows[1];
+    if (!me) return '';
+    if (!next) return `${me.score} — det eneste registrerte resultatet.`;
+    const diff = Math.abs(me.score - next.score);
+    if (!diff) return `${me.score}, delt beste resultat av ${rows.length} — men først til å levere.`;
+    return `${me.score}, ${diff} ${scoreDirOf(t)==='low'?'mindre':'mer'} enn nestemann av ${rows.length} deltakere.`;
+  }
+  const inA = (t.groupA||[]).includes(name);
+  const group = inA ? (t.groupA||[]) : (t.groupB||[]);
+  const results = inA ? (t.resultsA||{}) : (t.resultsB||{});
+  const me = calcStandings(group, results, t.mode, scoreDirOf(t)).find(r => r.name === name);
+  if (!me || !me.p) return 'Seier i finalen.';
+  if (!me.l && me.w === me.p) return `Ubeslått gjennom hele gruppespillet — ${me.w} av ${me.p} kamper vunnet, og finalen med.`;
+  if (!me.l) return `Ikke tapt en kamp i gruppa på ${me.p} forsøk, og så finalen.`;
+  return `${me.w} av ${me.p} kamper vunnet i gruppa, og seier i finalen.`;
+}
+
+function toggleDisplayDone() {
+  tState.hideFromDisplay = !tState.hideFromDisplay;
+  renderTournamentView();
+  tWrite({ hideFromDisplay: tState.hideFromDisplay });
+}
+
+// Rangert tavle. Spillere uten score havner nederst, uansett retning.
+function boardStandings(t) {
+  const scores = t.scores||{};
+  const dir = scoreDirOf(t);
+  const rows = (t.players||[]).map(name=>{
+    const e = scores[safeKey(name)];
+    return { name, score: e && typeof e.score==='number' ? e.score : null, ts: e?e.ts:0 };
+  });
+  rows.sort((a,b)=>{
+    if (a.score===null && b.score===null) return 0;
+    if (a.score===null) return 1;
+    if (b.score===null) return -1;
+    if (a.score!==b.score) return dir==='low' ? a.score-b.score : b.score-a.score;
+    return (a.ts||0)-(b.ts||0); // lik score: den som leverte først står øverst
+  });
+  let pos=0, prev=null;
+  return rows.map((r,i)=>{
+    if (r.score!==null && r.score!==prev) { pos=i+1; prev=r.score; }
+    return { ...r, pos: r.score===null ? null : pos };
+  });
+}
+
+function renderBoard() {
+  const rows = boardStandings(tState);
+  const scored = rows.filter(r=>r.score!==null).length;
+  document.getElementById('t-board-hint').textContent =
+    `${scored} av ${rows.length} har score · ${SCORE_DIRS[scoreDirOf(tState)].label.toLowerCase()}`;
+  document.getElementById('t-board-list').innerHTML = rows.length
+    ? rows.map(r=>{
+        const pc = r.pos===1?'p1':r.pos===2?'p2':r.pos===3?'p3':'px';
+        // Indeks i players-lista, ikke navnet: da slipper navnet aldri inn i en onclick-streng
+        const pi = (tState.players||[]).indexOf(r.name);
+        return `<div class="board-row${r.score===null?' unscored':''}">
+          <span class="pos ${pc}">${r.pos||'–'}</span>
+          <span class="board-name">${escapeHTML(r.name)}</span>
+          <input class="board-score" type="text" inputmode="numeric" pattern="[0-9-]*"
+            value="${r.score===null?'':r.score}" placeholder="—"
+            onchange="saveBoardScore(${pi}, this.value)" />
+          <button class="board-del" title="Fjern spiller"
+            onclick="removeBoardPlayer(${pi})">×</button>
+        </div>`;
+      }).join('')
+    : '<p class="muted">Ingen spillere ennå.</p>';
+  const displayBtn = document.getElementById('t-board-display-btn');
+  displayBtn.textContent = tState.hideFromDisplay ? '✓ Skjult fra liveskjerm — vis igjen' : 'Merk som fullført (skjul fra liveskjerm)';
+}
+
+// Poengtavla er nettopp der flere folk skriver inn sin egen score samtidig
+// — akkurat scenarioet som må tåle samtidighet. saveBoardScore/removeBoard-
+// Player skriver derfor bare til sin egen nøkkel under scores/, aldri hele
+// tState, så to samtidige innsendinger aldri kan overskrive hverandre.
+function addBoardPlayer() {
+  const input = document.getElementById('t-board-input');
+  const name = input.value.trim();
+  const errEl = document.getElementById('t-board-error');
+  if (!name) return;
+  if ((tState.players||[]).includes(name)) { errEl.textContent='Navn allerede lagt til'; errEl.style.display='block'; return; }
+  errEl.style.display='none';
+  tState.players = [...(tState.players||[]), name];
+  input.value='';
+  renderBoard();
+  setSignup(currentTId, name, true);
+}
+
+function removeBoardPlayer(pi) {
+  const name = (tState.players||[])[pi];
+  if (name===undefined) return;
+  if (!confirm(`Fjerne ${name} fra poengtavla?`)) return;
+  tState.players = (tState.players||[]).filter((_,i)=>i!==pi);
+  const key = safeKey(name);
+  if (tState.scores) delete tState.scores[key];
+  renderBoard();
+  setSignup(currentTId, name, false);
+  tWrite({ ['scores/'+key]: null });
+}
+
+function saveBoardScore(pi, raw) {
+  const name = (tState.players||[])[pi];
+  if (name===undefined) return;
+  if (!tState.scores) tState.scores = {};
+  const key = safeKey(name);
+  const txt = String(raw).trim();
+  if (txt==='') { delete tState.scores[key]; renderBoard(); tWrite({ ['scores/'+key]: null }); return; }
+  const n = parseInt(txt, 10);
+  if (isNaN(n)) { renderBoard(); return; }
+  const entry = { name, score: n, ts: Date.now() };
+  tState.scores[key] = entry;
+  renderBoard();
+  tWrite({ ['scores/'+key]: entry });
+}
+
+function resetBoard() {
+  if (!confirm('Nullstille alle scorer? Spillerne beholdes.')) return;
+  tState.scores = {};
+  renderBoard();
+  tWrite({ scores: {} });
+}
+
+// Kampene i den rekkefølgen de faktisk spilles: A1, B1, A2, B2 ... Gruppene går parallelt.
+function playOrder(t) {
+  const fa=t.fixturesA||[], fb=t.fixturesB||[], order=[];
+  for(let i=0;i<Math.max(fa.length,fb.length);i++) {
+    if(fa[i]) order.push({grp:'a',idx:i,f:fa[i]});
+    if(fb[i]) order.push({grp:'b',idx:i,f:fb[i]});
+  }
+  return order;
+}
+function matchResult(t, m) {
+  const results = m.grp==='a' ? (t.resultsA||{}) : (t.resultsB||{});
+  return results[fkey(m.f)] || null;
+}
+function isPlayed(t, m) { const r=matchResult(t,m); return !!(r&&r.winner); }
+function lastPlayed(t) {
+  const played = playOrder(t).filter(m=>isPlayed(t,m)).map(m=>({...m,r:matchResult(t,m)}));
+  if(!played.length) return null;
+  // Nyeste tidsstempel vinner. Resultater lagret før ts fantes har 0 og faller
+  // dermed tilbake på spillerekkefølgen, som er nærmeste tilgjengelige sannhet.
+  return played.reduce((a,b)=>(b.r.ts||0)>=(a.r.ts||0)?b:a);
+}
+function nextUp(t) { return playOrder(t).find(m=>!isPlayed(t,m)) || null; }
+
+function calcStandings(group, results, mode, dir) {
+  mode = mode || tState.mode;
+  dir = dir || scoreDirOf(tState);
+  const s={};
+  group.forEach(p=>{s[p]={p:0,w:0,d:0,l:0,pts:0,gf:0,ga:0,gd:0};});
+  Object.values(results).forEach(r=>{
+    if(!r.winner) return;
+    if(!s[r.home]||!s[r.away]) return; // resultat fra en spiller som ikke er i gruppa lenger
+    s[r.home].p++; s[r.away].p++;
+    if(typeof r.homeScore==='number'&&typeof r.awayScore==='number') {
+      s[r.home].gf+=r.homeScore; s[r.home].ga+=r.awayScore;
+      s[r.away].gf+=r.awayScore; s[r.away].ga+=r.homeScore;
+      s[r.home].gd=s[r.home].gf-s[r.home].ga;
+      s[r.away].gd=s[r.away].gf-s[r.away].ga;
+    }
+    if(r.winner==='a'){s[r.home].w++;s[r.home].pts+=3;s[r.away].l++;}
+    else if(r.winner==='b'){s[r.away].w++;s[r.away].pts+=3;s[r.home].l++;}
+    else{s[r.home].d++;s[r.home].pts++;s[r.away].d++;s[r.away].pts++;}
+  });
+
+  function h2h(a,b) {
+    const m=Object.values(results).find(r=>(r.home===a&&r.away===b)||(r.home===b&&r.away===a));
+    if(!m) return 0;
+    if(m.winner==='draw') return 1;
+    return (m.winner==='a'&&m.home===a)||(m.winner==='b'&&m.away===a)?3:0;
+  }
+
+  return [...group].sort((a,b)=>{
+    const sa=s[a],sb=s[b];
+    if(sb.pts!==sa.pts) return sb.pts-sa.pts;
+    if(sb.w!==sa.w) return sb.w-sa.w;
+    if(mode==='score') {
+      if(dir==='low') { if(sa.gf!==sb.gf) return sa.gf-sb.gf; }
+      else { if(sb.gd!==sa.gd) return sb.gd-sa.gd; if(sb.gf!==sa.gf) return sb.gf-sa.gf; }
+    }
+    const h=h2h(b,a)-h2h(a,b); if(h) return h;
+    if(sa.l!==sb.l) return sa.l-sb.l;
+    return Math.random()-0.5;
+  }).map((name,i)=>({pos:i+1,name,...s[name]}));
+}
+
+// ===== RENDER TOURNAMENT =====
+function renderTournamentView() {
+  if (isBoard(tState)) {
+    document.getElementById('t-setup').style.display = 'none';
+    document.getElementById('t-main').style.display = 'none';
+    document.getElementById('t-board').style.display = 'block';
+    renderBoard();
+    return;
+  }
+  document.getElementById('t-board').style.display = 'none';
+  const has = (tState.groupA||[]).length > 0;
+  document.getElementById('t-setup').style.display = has?'none':'block';
+  document.getElementById('t-main').style.display = has?'block':'none';
+  if (!has) { renderTPlayers(); return; }
+
+  // Groups
+  const gA = tState.groupA||[], gB = tState.groupB||[];
+  document.getElementById('t-groups-grid').innerHTML = `
+    <div class="group-card">
+      <div class="group-hdr a">Gruppe A · ${gA.length} spillere</div>
+      ${gA.map(p=>`<div class="group-member">${escapeHTML(p)}</div>`).join('')}
+    </div>
+    <div class="group-card">
+      <div class="group-hdr b">Gruppe B · ${gB.length} spillere</div>
+      ${gB.map(p=>`<div class="group-member">${escapeHTML(p)}</div>`).join('')}
+    </div>`;
+
+  // Fixtures
+  const fWrap = document.getElementById('t-fixtures-wrap');
+  fWrap.innerHTML = ['a','b'].map(grp=>{
+    const fixtures = grp==='a'?tState.fixturesA:tState.fixturesB;
+    const results  = grp==='a'?tState.resultsA:tState.resultsB;
+    const played = Object.values(results||{}).filter(r=>r.winner||(typeof r.homeScore==='number'&&typeof r.awayScore==='number')).length;
+    const total = (fixtures||[]).length;
+    const rows = (fixtures||[]).map((f,i)=>{
+      const r = (results||{})[fkey(f)]||{};
+      let badge='';
+      if(tState.mode==='score'&&typeof r.homeScore==='number'&&typeof r.awayScore==='number') {
+        const cls=r.winner==='a'?'res-a':r.winner==='b'?'res-b':'res-d';
+        badge=`<span class="fix-badge ${cls}">${r.homeScore}–${r.awayScore}</span>`;
+      } else if(r.winner==='a') badge=`<span class="fix-badge res-a">${escapeHTML(f[0])} vinner</span>`;
+      else if(r.winner==='b') badge=`<span class="fix-badge res-b">${escapeHTML(f[1])} vinner</span>`;
+      else if(r.winner==='draw') badge=`<span class="fix-badge res-d">Uavgjort</span>`;
+      else badge=`<span class="fix-badge res-none">Trykk for å registrere</span>`;
+      return `<div class="fixture-row" onclick="openMatchDialog('${grp}',${i})">
+        <span class="fix-num">${i+1}.</span>
+        <span class="fix-team r">${escapeHTML(f[0])}</span>
+        <span class="fix-vs">vs</span>
+        <span class="fix-team">${escapeHTML(f[1])}</span>
+        ${badge}
+      </div>`;
+    }).join('');
+    return `<div class="card">
+      <div style="font-weight:700;font-size:14px;color:var(--${grp==='a'?'accent-text':'green-text'});margin-bottom:4px;">Gruppe ${grp.toUpperCase()}</div>
+      <div class="prog-label">${played} av ${total} spilt</div>
+      <div class="prog-wrap"><div class="prog-bar" style="width:${total?Math.round(played/total*100):0}%;background:var(--${grp==='a'?'accent':'green'});"></div></div>
+      ${rows}
+    </div>`;
+  }).join('');
+
+  // Standings
+  const sWrap = document.getElementById('t-standings-wrap');
+  const showGD = tState.mode==='score';
+  const showD = tState.mode==='wdl';
+  sWrap.innerHTML = ['a','b'].map(grp=>{
+    const group = grp==='a'?tState.groupA:tState.groupB;
+    const results = grp==='a'?tState.resultsA:tState.resultsB;
+    const rows = calcStandings(group||[], results||{});
+    return `<div class="card">
+      <div style="font-weight:700;font-size:14px;color:var(--${grp==='a'?'accent-text':'green-text'});margin-bottom:0.75rem;">Gruppe ${grp.toUpperCase()}</div>
+      <table class="stand-table">
+        <thead><tr>
+          <th style="width:28px;">#</th><th class="name">Spiller</th>
+          <th>K</th><th>S</th>${showD?'<th>U</th>':''}<th>T</th>
+          ${showGD?'<th>M+/-</th>':''}
+          <th>Pkt</th>
+        </tr></thead>
+        <tbody>${rows.map(r=>{
+          const pc=r.pos===1?'p1':r.pos===2?'p2':r.pos===3?'p3':'px';
+          const gdStr=r.gd>0?'+'+r.gd:r.gd;
+          return `<tr>
+            <td><span class="pos ${pc}">${r.pos}</span></td>
+            <td class="name">${escapeHTML(r.name)}</td>
+            <td>${r.p}</td><td>${r.w}</td>${showD?`<td>${r.d}</td>`:''}<td>${r.l}</td>
+            ${showGD?`<td>${gdStr}</td>`:''}
+            <td style="font-weight:700;">${r.pts}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+    </div>`;
+  }).join('');
+
+  // Playoffs
+  const sA = calcStandings(tState.groupA||[], tState.resultsA||{});
+  const sB = calcStandings(tState.groupB||[], tState.resultsB||{});
+  const pr = tState.playoffResults||{};
+  const size = Math.min(sA.length, sB.length);
+  // playoffResults lagrer vinnersiden ('a'/'b'), på samme form som gruppespillet
+  const poName = (i, side) => side==='a' ? (sA[i]||{}).name : side==='b' ? (sB[i]||{}).name : undefined;
+  const pod = podium(tState) || {};
+  const { champion, runnerUp, third } = pod;
+
+  const displayBtn = document.getElementById('t-display-btn');
+  if (displayBtn) displayBtn.textContent = tState.hideFromDisplay
+    ? '✓ Skjult fra liveskjerm — vis igjen'
+    : 'Merk som fullført (skjul fra liveskjerm)';
+
+  const winnerSection = document.getElementById('t-winner-section');
+  if (champion) {
+    winnerSection.innerHTML = `
+      <div class="winner-banner">
+        <span class="winner-trophy">🏆</span>
+        <div class="winner-label">Turneringsvinner</div>
+        <div class="winner-name">${escapeHTML(champion)}</div>
+        <div class="muted" style="font-size:13px;">Gratulerer!</div>
+      </div>
+      <div class="podium-row">
+        <div class="podium-item silver"><span class="podium-medal">🥈</span><div class="podium-pos">2. plass</div><div class="podium-name">${escapeHTML(runnerUp||'—')}</div></div>
+        <div class="podium-item gold"><span class="podium-medal">🥇</span><div class="podium-pos">1. plass</div><div class="podium-name">${escapeHTML(champion)}</div></div>
+        <div class="podium-item bronze"><span class="podium-medal">🥉</span><div class="podium-pos">3. plass</div><div class="podium-name">${escapeHTML(third||'—')}</div></div>
+      </div>`;
+  } else { winnerSection.innerHTML = ''; }
+
+  document.getElementById('t-playoff-matches').innerHTML = Array.from({length:size},(_,i)=>{
+    // Kamp i spiller om plass 2i+1 og 2i+2: 0=finale, 1=3. plass, 2=5. plass osv.
+    const label=i===0?'FINALE':`${2*i+1}. PLASS`;
+    const pA=sA[i]?sA[i].name:`A${i+1}`;
+    const pB=sB[i]?sB[i].name:`B${i+1}`;
+    const r=pr['match_'+i]||{};
+    let badge='';
+    if(tState.mode==='score'&&typeof r.homeScore==='number'&&typeof r.awayScore==='number') {
+      const cls=r.winner==='a'?'res-a':r.winner==='b'?'res-b':'res-d';
+      badge=`<span class="fix-badge ${cls}">${r.homeScore}–${r.awayScore}</span>`;
+    } else if(r.winner==='a') badge=`<span class="fix-badge res-a">${escapeHTML(pA)} vinner</span>`;
+    else if(r.winner==='b') badge=`<span class="fix-badge res-b">${escapeHTML(pB)} vinner</span>`;
+    else badge=`<span class="fix-badge res-none">Trykk for å registrere</span>`;
+    return `<div class="playoff-card" onclick="openPlayoffDialog(${i})">
+      <div class="playoff-label ${i===0?'final':''}">${label}</div>
+      <div class="fixture-row" style="border:none;padding:0;pointer-events:none;cursor:default;">
+        <span class="fix-team r" style="font-size:17px;font-weight:700;">${escapeHTML(pA)}</span>
+        <span class="fix-vs">vs</span>
+        <span class="fix-team" style="font-size:17px;font-weight:700;">${escapeHTML(pB)}</span>
+        ${badge}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ===== MATCH DIALOG =====
+function openMatchDialog(grp, idx) {
+  const fixtures = grp==='a'?tState.fixturesA:tState.fixturesB;
+  const results  = grp==='a'?tState.resultsA:tState.resultsB;
+  const f = fixtures[idx];
+  const r = (results||{})[fkey(f)]||{};
+  let scoreH = typeof r.homeScore==='number'?r.homeScore:0;
+  let scoreA = typeof r.awayScore==='number'?r.awayScore:0;
+  let hasScore = typeof r.homeScore==='number';
+
+  showMatchDialog(f[0], f[1], tState.mode,
+    // onResult — skriver kun denne ene kampens resultat, aldri hele
+    // turneringen: to ulike kamper kan lagres samtidig uten å krysse hverandre.
+    (winner, loser, hs, as_) => {
+      const field = (grp==='a'?'resultsA/':'resultsB/') + fkey(f);
+      const value = winner===null ? null : {winner,loser,home:f[0],away:f[1],homeScore:hs,awayScore:as_,ts:Date.now()};
+      tWrite({ [field]: value });
+    },
+    r, scoreH, scoreA, hasScore
+  );
+}
+
+function openPlayoffDialog(idx) {
+  if (!tState.playoffResults) tState.playoffResults={};
+  const sA = calcStandings(tState.groupA||[], tState.resultsA||{});
+  const sB = calcStandings(tState.groupB||[], tState.resultsB||{});
+  const pA = sA[idx] ? sA[idx].name : `A${idx+1}`;
+  const pB = sB[idx] ? sB[idx].name : `B${idx+1}`;
+  const r = tState.playoffResults['match_'+idx]||{};
+  let scoreH = typeof r.homeScore==='number'?r.homeScore:0;
+  let scoreA = typeof r.awayScore==='number'?r.awayScore:0;
+  let hasScore = typeof r.homeScore==='number';
+
+  showMatchDialog(pA, pB, tState.mode,
+    (winner, loser, hs, as_) => {
+      const field = 'playoffResults/match_'+idx;
+      const value = winner===null ? null : {winner,loser,homeScore:hs,awayScore:as_,ts:Date.now()};
+      tWrite({ [field]: value });
+    },
+    r, scoreH, scoreA, hasScore
+  );
+}
+
+function showMatchDialog(p1, p2, mode, onResult, r, scoreH, scoreA, hasScore) {
+  let sh = scoreH, sa = scoreA, hs = hasScore;
+  const container = document.getElementById('match-dialog-container');
+
+  function render() {
+    const low = scoreDirOf(tState)==='low';
+    const hwin = hs&&(low?sh<sa:sh>sa), awin = hs&&(low?sa<sh:sa>sh);
+    let body = '';
+    if (mode==='score') {
+      body = `<div class="score-grid">
+        <div class="score-col">
+          <div class="score-name">${escapeHTML(p1)}</div>
+          <button class="score-step-btn" onclick="stepScore('h',1)" tabindex="-1">+</button>
+          <input id="si-h" class="score-val ${hwin?'winning':''}" type="text" inputmode="numeric" pattern="[0-9]*" ${hs?`value="${sh}"`:''}  placeholder="—" />
+          <button class="score-step-btn" onclick="stepScore('h',-1)" tabindex="-1">−</button>
+        </div>
+        <span class="score-sep">:</span>
+        <div class="score-col">
+          <div class="score-name">${escapeHTML(p2)}</div>
+          <button class="score-step-btn" onclick="stepScore('a',1)" tabindex="-1">+</button>
+          <input id="si-a" class="score-val ${awin?'winning':''}" type="text" inputmode="numeric" pattern="[0-9]*" ${hs?`value="${sa}"`:''}  placeholder="—" />
+          <button class="score-step-btn" onclick="stepScore('a',-1)" tabindex="-1">−</button>
+        </div>
+      </div>
+      <button class="score-save-btn" onclick="saveScore()">Lagre resultat</button>`;
+    } else {
+      const wdl = mode==='wdl';
+      const selA = r.winner==='a', selD = r.winner==='draw', selB = r.winner==='b';
+      body = `<div class="match-result-btns">
+        <button class="match-result-btn ${selA?'sel-a':''}" onclick="dlgSetWinner('a')">
+          <span>${escapeHTML(p1)} vinner</span><span class="match-result-btn-pts">3 pkt</span>
+        </button>
+        ${wdl?`<button class="match-result-btn ${selD?'sel-d':''}" onclick="dlgSetWinner('draw')">
+          <span>Uavgjort</span><span class="match-result-btn-pts">1 pkt hver</span>
+        </button>`:''}
+        <button class="match-result-btn ${selB?'sel-b':''}" onclick="dlgSetWinner('b')">
+          <span>${escapeHTML(p2)} vinner</span><span class="match-result-btn-pts">3 pkt</span>
+        </button>
+      </div>`;
+    }
+
+    container.innerHTML = `
+      <div class="match-dialog-overlay" id="dlg-overlay">
+        <div class="match-dialog">
+          <div class="match-dialog-handle"></div>
+          <div class="match-dialog-players">
+            <span>${escapeHTML(p1)}</span>
+            <span class="match-dialog-vs">vs</span>
+            <span>${escapeHTML(p2)}</span>
+          </div>
+          ${body}
+          <button class="dialog-clear-btn" onclick="dlgClear()">Slett resultat</button>
+        </div>
+      </div>`;
+
+    document.getElementById('dlg-overlay').addEventListener('click', e=>{
+      if (e.target.id==='dlg-overlay') {
+        if (mode==='score') saveScore();
+        else closeDlg();
+      }
+    });
+
+    if (mode==='score') {
+      setTimeout(()=>{
+        const hEl=document.getElementById('si-h'), aEl=document.getElementById('si-a');
+        function upd() {
+          hs=true;
+          sh=Math.max(0,parseInt(hEl?.value)||0);
+          sa=Math.max(0,parseInt(aEl?.value)||0);
+          if(hEl) hEl.className='score-val'+(sh>sa?' winning':'');
+          if(aEl) aEl.className='score-val'+(sa>sh?' winning':'');
+        }
+        if(hEl) hEl.addEventListener('input', upd);
+        if(aEl) aEl.addEventListener('input', upd);
+      }, 30);
+    }
+  }
+
+  window.stepScore = function(side, delta) {
+    const hEl=document.getElementById('si-h'), aEl=document.getElementById('si-a');
+    if(side==='h') sh=Math.max(0,(parseInt(hEl?.value)||0)+delta);
+    else sa=Math.max(0,(parseInt(aEl?.value)||0)+delta);
+    hs=true;
+    if(hEl) { hEl.value=sh; hEl.className='score-val'+(sh>sa?' winning':''); }
+    if(aEl) { aEl.value=sa; aEl.className='score-val'+(sa>sh?' winning':''); }
+  };
+
+  window.saveScore = function() {
+    const hEl=document.getElementById('si-h'), aEl=document.getElementById('si-a');
+    const h=Math.max(0,parseInt(hEl?.value)||0), a=Math.max(0,parseInt(aEl?.value)||0);
+    const hBest = scoreDirOf(tState)==='low' ? h<a : h>a;
+    const aBest = scoreDirOf(tState)==='low' ? a<h : a>h;
+    const winner=hBest?'a':aBest?'b':'draw', loser=hBest?p2:aBest?p1:null;
+    onResult(winner, loser, h, a);
+    closeDlg();
+  };
+
+  window.dlgSetWinner = function(side) {
+    const loser=side==='a'?p2:side==='b'?p1:null;
+    onResult(side==='draw'?'draw':side, loser, null, null);
+    closeDlg();
+  };
+
+  window.dlgClear = function() { onResult(null, null, null, null); closeDlg(); };
+  function closeDlg() { container.innerHTML=''; }
+  render();
+}
+
+// ===== LIVE DISPLAY =====
+let displayIntervals = [];
+let dispEventId = null;
+let dispTournaments = {};
+let dispCurrent = 0;
+let dispRef = null;
+
+function openDisplayScreen() {
+  const url = window.location.origin + window.location.pathname + '?e=' + currentEventId + '&display=1';
+  window.open(url, '_blank');
+}
+
+function exitDisplay() {
+  clearReveal();
+  displayIntervals.forEach(clearInterval);
+  displayIntervals=[];
+  if (dispRef) dispRef.off();
+  window.location.href = window.location.pathname;
+}
+
+async function loadDisplayScreen(eventId) {
+  dispEventId = eventId;
+  const snap = await db.ref('events/'+eventId+'/meta').once('value');
+  const meta = snap.val();
+  if (!meta) { showScreen('screen-home'); return; }
+  document.getElementById('disp-event-name').textContent = meta.name;
+  document.title = meta.name + ' · dCup Live';
+
+  dispRef = db.ref('events/'+eventId+'/tournaments');
+  dispRef.on('value', snap=>{
+    dispTournaments = snap.val()||{};
+    renderDisplay();
+    checkForReveal();
+  });
+  showScreen('screen-display');
+  startDisplayRotation();
+}
+
+// Skjuler turneringer som ikke er startet ennå, eller som er markert
+// fullført — liveskjermen skal bare vise det som faktisk pågår.
+function visibleDispTournaments() {
+  return Object.entries(dispTournaments).filter(([,t]) => isStarted(t) && !t.hideFromDisplay);
+}
+
+// ===== VINNERAVSLØRING =====
+// Spilles én gang, når skjermen ser en vinner dukke opp mens den står på.
+// Ved oppstart merkes vinnere som alt finnes som avslørt, slik at en
+// oppfriskning av TV-en ikke spiller av gamle finaler på nytt.
+let revealedWinners = new Set();
+let revealSeeded = false;
+let revealBusy = false;
+let revealTimers = [];
+let fireworks = null;
+
+function seedRevealed() {
+  Object.entries(dispTournaments).forEach(([tid, t]) => {
+    if (podium(t)) revealedWinners.add(tid);
+  });
+  revealSeeded = true;
+}
+
+function checkForReveal() {
+  if (!revealSeeded) { seedRevealed(); return; }
+  if (revealBusy) return;
+  for (const [tid, t] of Object.entries(dispTournaments)) {
+    if (t.hideFromDisplay || revealedWinners.has(tid)) continue;
+    const pod = podium(t);
+    if (pod) { revealedWinners.add(tid); playReveal(tid); return; }
+  }
+}
+
+function clearReveal() {
+  revealTimers.forEach(clearTimeout);
+  revealTimers = [];
+  if (fireworks) { fireworks.stop(); fireworks = null; }
+  revealBusy = false;
+  const el = document.getElementById('disp-reveal');
+  if (el) el.style.display = 'none';
+}
+
+function playReveal(tid) {
+  const el = document.getElementById('disp-reveal');
+  const t = dispTournaments[tid];
+  const pod = t && podium(t);
+  if (!el || !pod) return;
+  revealBusy = true;
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const eyebrow = document.getElementById('reveal-eyebrow');
+  const line = document.getElementById('reveal-line');
+  const nameEl = document.getElementById('reveal-name');
+  const podEl = document.getElementById('reveal-podium');
+
+  const setLine = txt => {
+    line.textContent = txt;
+    line.classList.remove('fade');
+    void line.offsetWidth; // tvinger animasjonen til å starte på nytt
+    line.classList.add('fade');
+  };
+
+  eyebrow.textContent = '';
+  line.textContent = '';
+  nameEl.textContent = '';
+  nameEl.classList.remove('in');
+  podEl.innerHTML = '';
+  podEl.classList.remove('in');
+  el.style.display = 'flex';
+
+  const step = (ms, fn) => revealTimers.push(setTimeout(fn, reduce ? Math.min(ms, 600) : ms));
+
+  const showName = () => {
+    eyebrow.textContent = 'Vinneren er';
+    line.textContent = '';
+    nameEl.textContent = pod.champion;
+    nameEl.classList.add('in');
+    if (!reduce) fireworks = startFireworks(document.getElementById('disp-fireworks'));
+  };
+
+  const showPodium = () => {
+    const fresh = podium(dispTournaments[tid] || {}) || pod;
+    const rows = [
+      { cls: 'silver', medal: '🥈', pos: '2. plass', name: fresh.runnerUp },
+      { cls: 'gold', medal: '🥇', pos: '1. plass', name: fresh.champion },
+      { cls: 'bronze', medal: '🥉', pos: '3. plass', name: fresh.third },
+    ].filter(r => r.name);
+    podEl.innerHTML = rows.map(r => `
+      <div class="reveal-step ${r.cls}">
+        <span class="reveal-medal">${r.medal}</span>
+        <div class="reveal-step-pos">${r.pos}</div>
+        <div class="reveal-step-name">${escapeHTML(r.name)}</div>
+      </div>`).join('');
+    podEl.classList.add('in');
+  };
+
+  eyebrow.textContent = 'Og vi har en vinner i';
+  setLine(t.name || 'turneringen');
+  step(3400, () => { eyebrow.textContent = ''; setLine(winnerBlurb(t, pod.champion)); });
+  step(7400, () => { eyebrow.textContent = ''; setLine('Vinneren er…'); });
+  step(9600, showName);
+  step(12200, showPodium);
+  step(reduce ? 9000 : 22000, clearReveal);
+}
+
+// Enkelt partikkelsystem på canvas. Ingen bibliotek, ingen SVG-baner.
+function startFireworks(canvas) {
+  if (!canvas) return null;
+  const ctx = canvas.getContext('2d');
+  let raf = null, burstTimer = null, running = true;
+  let particles = [];
+  const COLORS = ['#fcd34d', '#93c5fd', '#86efac', '#f9a8d4', '#fdba74', '#ffffff'];
+
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = canvas.clientWidth * dpr;
+    canvas.height = canvas.clientHeight * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  resize();
+
+  function burst() {
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    const x = w * (0.15 + Math.random() * 0.7);
+    const y = h * (0.12 + Math.random() * 0.4);
+    const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+    const count = 60 + Math.floor(Math.random() * 40);
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count + Math.random() * 0.2;
+      const speed = 1.6 + Math.random() * 3.4;
+      particles.push({
+        x, y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 1,
+        decay: 0.008 + Math.random() * 0.012,
+        color,
+        size: 1.4 + Math.random() * 1.8,
+      });
+    }
+    if (particles.length > 2200) particles = particles.slice(-2200);
+  }
+
+  function frame() {
+    if (!running) return;
+    ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+    particles = particles.filter(p => p.life > 0);
+    particles.forEach(p => {
+      p.vy += 0.035;          // tyngdekraft
+      p.vx *= 0.985;          // luftmotstand
+      p.vy *= 0.985;
+      p.x += p.vx;
+      p.y += p.vy;
+      p.life -= p.decay;
+      ctx.globalAlpha = Math.max(p.life, 0);
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+    raf = requestAnimationFrame(frame);
+  }
+
+  burst();
+  burstTimer = setInterval(burst, 620);
+  frame();
+  window.addEventListener('resize', resize);
+
+  return {
+    stop() {
+      running = false;
+      if (raf) cancelAnimationFrame(raf);
+      if (burstTimer) clearInterval(burstTimer);
+      window.removeEventListener('resize', resize);
+      ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+      particles = [];
+    }
+  };
+}
+
+function startDisplayRotation() {
+  const STAY = 12000; // 12s per turnering
+  displayIntervals.push(setInterval(()=>{
+    if (revealBusy) return; // ikke bytt turnering midt i en avsløring
+    const tList = visibleDispTournaments();
+    if (tList.length < 2) return; // én turnering: ingenting å rullere mellom
+    dispCurrent = (dispCurrent+1)%tList.length;
+    renderDisplay();
+    animateProgressBar(STAY);
+  }, STAY));
+}
+
+function animateProgressBar(duration) {
+  const fill = document.getElementById('disp-next-fill');
+  if (!fill) return;
+  fill.style.transition = 'none'; fill.style.width = '0%';
+  setTimeout(()=>{ fill.style.transition = `width ${duration}ms linear`; fill.style.width='100%'; }, 50);
+}
+
+function renderDisplay() {
+  const tList = visibleDispTournaments();
+  if (!tList.length) {
+    const msg = Object.keys(dispTournaments).length ? 'Venter på at en turnering skal starte' : 'Ingen turneringer ennå';
+    document.getElementById('disp-content').innerHTML = `<div style="opacity:0.3;text-align:center;padding:3rem;font-size:18px;">${msg}</div>`;
+    return;
+  }
+  dispCurrent = Math.min(dispCurrent, tList.length-1);
+  const [tid, t] = tList[dispCurrent];
+  const sport = SPORTS.find(s=>s.id===t.sport)||SPORTS[SPORTS.length-1];
+
+  document.getElementById('disp-t-name').textContent = t.name||'';
+  document.getElementById('disp-sport-icon').textContent = sport.icon;
+  document.getElementById('disp-indicator').innerHTML = tList.map((_,i)=>
+    `<div class="display-dot ${i===dispCurrent?'active':''}"></div>`
+  ).join('');
+
+  const board = isBoard(t);
+  const pod = podium(t);
+  const content = document.getElementById('disp-content');
+
+  // Ferdig turnering: pallen er det som betyr noe, ikke tabellen. Den blir
+  // stående til noen merker turneringen som fullført.
+  if (pod) {
+    const rows = [
+      { cls:'silver', medal:'🥈', pos:'2. plass', name:pod.runnerUp },
+      { cls:'gold',   medal:'🥇', pos:'1. plass', name:pod.champion },
+      { cls:'bronze', medal:'🥉', pos:'3. plass', name:pod.third },
+    ].filter(r => r.name);
+    content.innerHTML = `
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:1.5rem;">
+        <div class="display-section-title" style="margin:0;">🏆 ${escapeHTML(t.name||'')} er avgjort</div>
+        <div class="reveal-name" style="opacity:1;margin:0;font-size:clamp(34px,6vw,76px);">${escapeHTML(pod.champion)}</div>
+        <div class="display-card-sub" style="font-size:15px;opacity:0.55;max-width:46ch;text-align:center;">${escapeHTML(winnerBlurb(t, pod.champion))}</div>
+        <div class="reveal-podium" style="margin:0;opacity:1;">
+          ${rows.map(r => `
+            <div class="reveal-step ${r.cls}">
+              <span class="reveal-medal">${r.medal}</span>
+              <div class="reveal-step-pos">${r.pos}</div>
+              <div class="reveal-step-name">${escapeHTML(r.name)}</div>
+            </div>`).join('')}
+        </div>
+      </div>`;
+    return;
+  }
+
+  content.innerHTML = `
+    <div class="display-main">
+      <div class="display-col">
+        <div class="display-section-title">${board?'Poengtavle':'Tabell'}</div>
+        ${board?renderDisplayBoard(t):renderDisplayTables(t)}
+      </div>
+      <div class="display-col">${board?renderDisplayBoardSide(t):renderDisplaySide(t)}</div>
+    </div>`;
+}
+
+function renderDisplayBoard(t) {
+  const rows = boardStandings(t);
+  if (!rows.length) return '<div style="opacity:0.3;font-size:18px;">Ingen spillere ennå</div>';
+  return `<table class="display-table">
+    <thead><tr><th style="width:30px;">#</th><th class="name">Spiller</th><th>Score</th></tr></thead>
+    <tbody>${rows.map(r=>{
+      const pc=r.pos===1?'p1':r.pos===2?'p2':r.pos===3?'p3':'px';
+      return `<tr>
+        <td><span class="display-pos ${pc}">${r.pos||'–'}</span></td>
+        <td class="name">${escapeHTML(r.name)}</td>
+        <td style="font-weight:700;">${r.score===null?'—':r.score}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>`;
+}
+
+function renderDisplayBoardSide(t) {
+  const rows = boardStandings(t);
+  const scored = rows.filter(r=>r.score!==null);
+  const missing = rows.filter(r=>r.score===null);
+  const last = scored.slice().sort((a,b)=>(b.ts||0)-(a.ts||0))[0];
+
+  const lastCard = `<div class="display-card">
+    <div class="display-card-label">Siste registrering</div>
+    ${last
+      ? `<div class="display-result-line">${escapeHTML(last.name)}<span class="display-score">${last.score}</span></div>
+         <div class="display-card-sub">${scored.length} av ${rows.length} har levert</div>`
+      : `<div class="display-result-line" style="opacity:0.3;">—</div>
+         <div class="display-card-sub">Ingen scorer ennå</div>`}
+  </div>`;
+
+  const doneCard = `<div class="display-card next">
+    <div class="display-card-label">${missing.length?'Mangler score':'Ferdig'}</div>
+    ${missing.length
+      ? missing.slice(0,DISP_QUEUE_MAX).map(r=>
+          `<div class="display-queue-item"><span class="display-queue-teams">${escapeHTML(r.name)}</span></div>`).join('')
+        + (missing.length>DISP_QUEUE_MAX
+            ? `<div class="display-card-sub">+ ${missing.length-DISP_QUEUE_MAX} flere</div>` : '')
+      : `<div class="display-result-line">🏆 ${escapeHTML((rows[0]||{}).name||'—')}</div>
+         <div class="display-card-sub">${SCORE_DIRS[scoreDirOf(t)].label} · score ${(rows[0]||{}).score ?? '—'}</div>`}
+  </div>`;
+
+  return lastCard + doneCard;
+}
+
+function renderDisplayTables(t) {
+  const showGD = t.mode==='score';
+  const showD = t.mode==='wdl';
+  return `<div class="display-grid">
+    ${['a','b'].map(grp=>{
+      const group=grp==='a'?t.groupA:t.groupB;
+      const results=grp==='a'?t.resultsA:t.resultsB;
+      if(!(group||[]).length) return '';
+      const rows=calcStandings(group||[], results||{}, t.mode, scoreDirOf(t));
+      return `<div>
+        <div class="display-group-title">Gruppe ${grp.toUpperCase()}</div>
+        <table class="display-table">
+          <thead><tr>
+            <th style="width:30px;">#</th><th class="name">Spiller</th>
+            <th>K</th><th>S</th>${showD?'<th>U</th>':''}<th>T</th>${showGD?'<th>M+/-</th>':''}
+            <th>Pkt</th>
+          </tr></thead>
+          <tbody>${rows.map(r=>{
+            const pc=r.pos===1?'p1':r.pos===2?'p2':r.pos===3?'p3':'px';
+            const gdStr=r.gd>0?'+'+r.gd:r.gd;
+            return `<tr>
+              <td><span class="display-pos ${pc}">${r.pos}</span></td>
+              <td class="name">${escapeHTML(r.name)}</td>
+              <td>${r.p}</td><td>${r.w}</td>${showD?`<td>${r.d}</td>`:''}<td>${r.l}</td>
+              ${showGD?`<td>${gdStr}</td>`:''}
+              <td style="font-weight:700;">${r.pts}</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+// Høyre kolonne: siste resultat, og køen slik at folk ser når de selv skal spille
+const DISP_QUEUE_MAX = 6;
+function renderDisplaySide(t) {
+  const order = playOrder(t);
+  if (!order.length) return `<div class="display-card">
+    <div class="display-card-label">Neste kamper</div>
+    <div class="display-result-line" style="opacity:0.3;">Ikke satt opp ennå</div>
+  </div>`;
+
+  const last = lastPlayed(t);
+  const queue = order.filter(m=>!isPlayed(t,m));
+
+  const lastCard = `<div class="display-card">
+    <div class="display-card-label">Siste resultat</div>
+    ${last
+      ? `<div class="display-result-line">${displayMatchLine(t,last.f,last.r)}</div>
+         <div class="display-card-sub">Gruppe ${last.grp.toUpperCase()} · ${order.length-queue.length} av ${order.length} spilt</div>`
+      : `<div class="display-result-line" style="opacity:0.3;">—</div>
+         <div class="display-card-sub">Ingen kamper spilt ennå</div>`}
+  </div>`;
+
+  const queueCard = `<div class="display-card next">
+    <div class="display-card-label">${queue.length?'Neste kamper':'Ferdig'}</div>
+    ${queue.length
+      ? queue.slice(0,DISP_QUEUE_MAX).map((m,i)=>`
+          <div class="display-queue-item${i===0?' up-next':''}">
+            <span class="display-queue-num">${i===0?'▶':i+1}</span>
+            <span class="display-queue-teams">${escapeHTML(m.f[0])}<span class="display-vs">vs</span>${escapeHTML(m.f[1])}</span>
+            <span class="display-queue-grp ${m.grp}">${m.grp.toUpperCase()}</span>
+          </div>`).join('')
+        + (queue.length>DISP_QUEUE_MAX
+            ? `<div class="display-card-sub">+ ${queue.length-DISP_QUEUE_MAX} kamper etter dette</div>` : '')
+      : `<div class="display-result-line">🏁 Alle kamper spilt</div>
+         <div class="display-card-sub">${order.length} av ${order.length} ferdig</div>`}
+  </div>`;
+
+  return lastCard + queueCard;
+}
+
+function displayMatchLine(t, f, r) {
+  if (t.mode==='score' && typeof r.homeScore==='number' && typeof r.awayScore==='number')
+    return `${escapeHTML(f[0])}<span class="display-score">${r.homeScore}–${r.awayScore}</span>${escapeHTML(f[1])}`;
+  if (r.winner==='draw')
+    return `${escapeHTML(f[0])}<span class="display-vs">uavgjort</span>${escapeHTML(f[1])}`;
+  const w = r.winner==='a'?f[0]:f[1], l = r.winner==='a'?f[1]:f[0];
+  return `${escapeHTML(w)}<span class="display-vs">slo</span>${escapeHTML(l)}`;
+}
