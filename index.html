@@ -1249,13 +1249,28 @@ function computeGroups(players) {
   return { groupA, groupB, fixturesA: roundRobin(groupA), fixturesB: roundRobin(groupB) };
 }
 
-function generateTournament() {
-  if ((tState.players||[]).length < 4) { showToast('Legg til minst 4 spillere'); return; }
-  const { groupA, groupB, fixturesA, fixturesB } = computeGroups(tState.players);
-  tState.groupA = groupA; tState.groupB = groupB;
-  tState.fixturesA = fixturesA; tState.fixturesB = fixturesB;
-  tState.resultsA = {}; tState.resultsB = {}; tState.playoffResults = {};
-  tPush();
+// Bruker en transaksjon i stedet for tPush(): den leser turneringen som den
+// faktisk står på serveren akkurat da, ikke den lokale (potensielt utdaterte)
+// tState. Ellers kunne en spiller meldt på i samme øyeblikk som noen trykker
+// "Generer grupper" bli overskrevet/utelatt av et tPush() som skrev hele
+// objektet basert på en tState uten den ferske påmeldingen.
+let generateNotEnough = false;
+async function generateTournament() {
+  if (!tRef) return;
+  generateNotEnough = false;
+  try {
+    await tRef.transaction(current => {
+      if (!current) return current;
+      const players = current.players || [];
+      if (players.length < 4) { generateNotEnough = true; return; }
+      const { groupA, groupB, fixturesA, fixturesB } = computeGroups(players);
+      return { ...current, groupA, groupB, fixturesA, fixturesB, resultsA: {}, resultsB: {}, playoffResults: {} };
+    });
+  } catch (err) {
+    showToast('Kunne ikke generere — prøv igjen');
+    return;
+  }
+  if (generateNotEnough) showToast('Legg til minst 4 spillere');
 }
 
 function resetTournament() {
