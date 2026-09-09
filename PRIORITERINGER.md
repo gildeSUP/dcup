@@ -15,11 +15,20 @@ Navn i `onclick` (XSS), `focusTId` som kastet deg tilbake ved hver endring,
 0–0 ved klikk utenfor score-dialogen, og `Math.random()` som tiebreak.
 Numrene beholdes fordi `PLAN-GRUPPER.md` viser til dem.
 
-### 5. Verifiser Firebase-reglene
-Kan ikke leses av repoet. Sjekk minst at `.read`/`.write` ligger på
-`events/$eventId`, ikke på roten — ellers kan hvem som helst lese ut *alle*
-events i basen med ett kall. Legg gjerne på `.validate` for strenglengder,
-så en tom database ikke kan fylles opp.
+### 5. ⚠️ Verifiser Firebase-reglene — SJEKK FØR EVENTET
+Reglene er endret, men **ikke verifisert ennå**. Kan ikke leses av repoet, så
+dette må gjøres i Firebase-konsollen.
+
+Sjekkliste:
+- [ ] `.read`/`.write` ligger på `events/$eventId`, ikke på roten — ellers kan
+      hvem som helst lese ut *alle* events i basen med ett kall
+- [ ] Åpne et event i appen og bekreft at påmelding, resultat og liveskjerm
+      fortsatt virker med de nye reglene (en for streng regel er like ille som
+      en for åpen: da feiler skrivingene midt i eventet)
+- [ ] Gjerne `.validate` for strenglengder, så en tom database ikke kan fylles opp
+
+Merk: en regelendring kan ikke testes fra denne kodebasen, bare i praksis mot
+den ekte basen. Test med en throwaway-event før den ekte brukes.
 
 ---
 
