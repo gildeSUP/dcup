@@ -1074,21 +1074,16 @@ async function addTournament() {
   }
   newParticipants.forEach(n => { if (!players.includes(n)) players.push(n); });
 
-  // Nok spillere valgt allerede? Da trenger man ikke innom "Legg til
-  // spillere"-siden og trykke Generer grupper manuelt — gjør det med det
-  // samme, så turneringen er klar til å spilles rett fra opprettelsen.
-  let groupA = [], groupB = [], fixturesA = [], fixturesB = [];
-  if (selectedFormat !== 'board' && players.length >= 4) {
-    ({ groupA, groupB, fixturesA, fixturesB } = computeGroups(players));
-  }
-
+  // Bevisst IKKE auto-generert: selv med nok spillere skal man alltid
+  // innom oppsettsiden og trykke "Generer grupper" selv — det gir rom
+  // for at flere kan melde seg på før turneringen faktisk settes i gang.
   const updates = {};
   updates['events/'+currentEventId+'/tournaments/'+id] = {
     name, sport: selectedSport,
     mode: selectedFormat==='board' ? 'score' : selectedMode,
     format: selectedFormat, scoreDir: selectedScoreDir,
     players,
-    groupA, groupB, fixturesA, fixturesB,
+    groupA:[], groupB:[], fixturesA:[], fixturesB:[],
     resultsA:{}, resultsB:{}, playoffResults:{}, scores:{}, created: Date.now()
   };
   newParticipants.forEach(n => {
