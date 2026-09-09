@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>dCup</title>
-<link rel="stylesheet" href="dcup.css">
+<link rel="stylesheet" href="dcup.css?v=3">
 </head>
 <body>
 
@@ -285,6 +285,17 @@
 
 <script src="https://cdn.jsdelivr.net/npm/firebase@9.23.0/firebase-app-compat.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/firebase@9.23.0/firebase-database-compat.min.js"></script>
-<script src="dcup.js"></script>
+<!-- Unikt versjonsnummer per sidelast, så en push alltid treffer umiddelbart
+     uten at noen må huske å øke et tall. Koster én nedlasting av dcup.js per
+     sidevisning. Lagt inn dynamisk fordi et statisk src ikke kan variere;
+     async=false bevarer rekkefølgen etter firebase-skriptene over. -->
+<script>
+(function () {
+  var s = document.createElement('script');
+  s.src = 'dcup.js?v=' + Date.now();
+  s.async = false;
+  document.body.appendChild(s);
+})();
+</script>
 </body>
 </html>

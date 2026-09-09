@@ -118,7 +118,7 @@ function renderPrefillList(people) {
     const key = safeKey(p.name);
     const checked = !!prefillManualSelected[key];
     return `<label class="signup-row">
-      <input type="checkbox" ${checked?'checked':''} onchange="togglePrefillManual('${key}')" />
+      <input type="checkbox" ${checked?'checked':''} data-key="${escapeHTML(key)}" />
       <span class="join-info"><span class="join-name-txt">${escapeHTML(p.name)}</span></span>
     </label>`;
   }).join('');
@@ -201,7 +201,7 @@ function showScreen(id) {
 }
 
 // ===== HOME =====
-window.addEventListener('DOMContentLoaded', () => {
+function boot() {
   const params = new URLSearchParams(window.location.search);
   const eventId = params.get('e');
   const tId = params.get('t');
@@ -214,7 +214,8 @@ window.addEventListener('DOMContentLoaded', () => {
   } else {
     showScreen('screen-home');
   }
-});
+}
+
 
 function joinEvent() {
   const val = document.getElementById('join-code').value.trim();
@@ -286,8 +287,13 @@ async function loadEvent(eventId, focusTId) {
   eventRef.on('value', snap => {
     tournaments = snap.val() || {};
     renderTournamentList();
+    // Bare ved første snapshot. Callbacken fyrer på hver endring i eventet, så
+    // uten dette ble man kastet tilbake til «Grupper» hver gang noen
+    // registrerte et resultat — og dratt inn i turneringen igjen etter «Event».
     if (focusTId && tournaments[focusTId]) {
-      openTournament(focusTId);
+      const tid = focusTId;
+      focusTId = null;
+      openTournament(tid);
     }
   });
 
@@ -378,11 +384,25 @@ function renderPeopleList() {
         <span class="join-name-txt">${escapeHTML(p.name)}</span>
         <span class="join-sub">${sports.length ? sports.join(' ') : 'Ingen turneringer ennå'}</span>
       </span>
-      <button class="board-edit" title="Rediger navn" onclick="renamePerson('${key}')">✏️</button>
-      <button class="board-del" title="Fjern deltaker" onclick="removePerson('${key}')">×</button>
+      <button class="board-edit" title="Rediger navn" data-act="rename" data-key="${escapeHTML(key)}">✏️</button>
+      <button class="board-del" title="Fjern deltaker" data-act="remove" data-key="${escapeHTML(key)}">×</button>
     </label>`;
   }).join('');
 }
+
+// Navnet går via data-key og dataset, aldri gjennom en JS-streng i en
+// HTML-attributt. safeKey escaper ikke ' eller ", så «O'Brien» drepte knappen
+// og et navn som «x');kode;('» kjørte kode ved klikk.
+document.getElementById('people-list')?.addEventListener('click', e => {
+  const btn = e.target.closest('[data-act]');
+  if (!btn) return;
+  if (btn.dataset.act === 'rename') renamePerson(btn.dataset.key);
+  else if (btn.dataset.act === 'remove') removePerson(btn.dataset.key);
+});
+document.getElementById('prefill-list')?.addEventListener('change', e => {
+  const box = e.target.closest('input[data-key]');
+  if (box) togglePrefillManual(box.dataset.key);
+});
 
 // Fjerner personen fra eventet og fra players-lista i alle turneringer de er
 // med i — ellers ville de stått igjen som spiller uten å være i deltakerlista.
@@ -520,7 +540,7 @@ function renderJoinList() {
     // Startede turneringer er sperret: trekningen er gjort, så et nytt navn i
     // players havner ikke i noen gruppe og ville stått som påmeldt uten å
     // finnes i tabellen, kampene eller oppsettet.
-    const started = isStarted(t);
+    const started = isSignupLocked(t);
     return `<label class="signup-row${started?' locked':''}">
       <input type="checkbox" data-tid="${id}" ${started?'disabled':'checked'} />
       <span class="join-icon">${sport.icon}</span>
@@ -552,7 +572,7 @@ async function saveJoin() {
     for (const box of document.querySelectorAll('#join-list input[type=checkbox]')) {
       if (box.disabled || !box.checked) continue;
       // Sjekkes på nytt her: turneringen kan ha blitt startet mens dialogen sto åpen
-      if (isStarted(tournaments[box.dataset.tid] || {})) continue;
+      if (isSignupLocked(tournaments[box.dataset.tid] || {})) continue;
       await setSignup(box.dataset.tid, name, true);
     }
     showToast('Lagt til!');
@@ -837,6 +857,11 @@ function isStarted(t) {
   return (t.groupA||[]).length > 0;
 }
 
+// Påmeldingssperren gjelder bare gruppespill: der er trekningen gjort, så et
+// nytt navn havner ikke i noen gruppe. En poengtavle har ingen trekning, og
+// addBoardPlayer tillater alt at folk kommer til underveis.
+function isSignupLocked(t) { return !isBoard(t) && isStarted(t); }
+
 // Motstykket til isStarted: alt som skal spilles er spilt. For grupper betyr
 // det alle gruppekamper, for poengtavle at hver deltaker har levert en score.
 // Merk at "ferdig gruppespill" ikke er det samme som "finalen er spilt".
@@ -1063,7 +1088,9 @@ function calcStandings(group, results, mode, dir) {
     }
     const h=h2h(b,a)-h2h(a,b); if(h) return h;
     if(sa.l!==sb.l) return sa.l-sb.l;
-    return Math.random()-0.5;
+    // Deterministisk: Math.random() gjorde at tabellen stokket om seg selv ved
+    // hver rendring, og playoff-kortene byttet om på navnene mellom rendringer.
+    return a.localeCompare(b, 'no');
   }).map((name,i)=>({pos:i+1,name,...s[name]}));
 }
 
@@ -1315,7 +1342,9 @@ function showMatchDialog(p1, p2, mode, onResult, r, scoreH, scoreA, hasScore) {
 
     document.getElementById('dlg-overlay').addEventListener('click', e=>{
       if (e.target.id==='dlg-overlay') {
-        if (mode==='score') saveScore();
+        // Lagre bare hvis noe faktisk er tastet inn. Før ble tomme felt lest
+        // som 0, så et uhellsklikk utenfor registrerte 0–0 uavgjort.
+        if (mode==='score' && hs) saveScore();
         else closeDlg();
       }
     });
@@ -1785,3 +1814,13 @@ function displayMatchLine(t, f, r) {
   const w = r.winner==='a'?f[0]:f[1], l = r.winner==='a'?f[1]:f[0];
   return `${escapeHTML(w)}<span class="display-vs">slo</span>${escapeHTML(l)}`;
 }
+
+// ===== OPPSTART =====
+// Kalles helt til slutt, ikke der boot() er definert: variabler som
+// currentEventId deklareres med let lenger ned, og et synkront kall midt i
+// fila treffer temporal dead zone.
+// dcup.js lastes dynamisk for å få et unikt versjonsnummer, og kjører derfor
+// først etter at DOMContentLoaded har fyrt — å bare lytte på hendelsen ville
+// gjort at appen aldri bootet.
+if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', boot);
+else boot();
