@@ -1041,6 +1041,67 @@ function isFinished(t) {
   return order.every(m => isPlayed(t, m));
 }
 
+// ===== SLUTTSPILL =====
+// playoffResults lagrer home/away som navn, slik gruppekampene alltid har
+// gjort. Lagret man bare vinnersiden, pekte den på en tabellplass — og endret
+// noen et gruppekampresultat etterpå, kunne vinneren bytte person i etterkant.
+function playoffWinner(pr, key) {
+  const r = pr && pr[key];
+  if (!r || !r.winner || r.winner === 'draw') return undefined;
+  return r.winner === 'a' ? r.home : r.away;
+}
+function playoffLoser(pr, key) {
+  const r = pr && pr[key];
+  if (!r || !r.winner || r.winner === 'draw') return undefined;
+  const derived = r.winner === 'a' ? r.away : r.home;
+  return derived !== undefined ? derived : r.loser;
+}
+
+// Gruppene pares vilkårlig, ikke etter rangering på tvers: computeGroups
+// stokker før den deler ut, så A–D er tilfeldig sammensatt og parringen blir
+// tilfeldig av seg selv. Da slipper vi å sammenligne poeng mellom grupper av
+// ulik størrelse, som ikke er sammenlignbare når de har spilt ulikt antall kamper.
+// match_0 er finalen uansett antall grupper — podium() hviler på det.
+function playoffMatches(t) {
+  const gs = groupsOf(t);
+  if (gs.length < 2) return [];
+  const st = gs.map(g => calcStandings(g.players, g.results, t.mode, scoreDirOf(t)));
+  const pr = t.playoffResults || {};
+  const top = i => ((st[i] || [])[0] || {}).name;
+
+  // Er kampen alt spilt, vis de lagrede navnene. Endrer noen et gruppe-
+  // resultat i etterkant, skal ikke en ferdigspilt kamp late som den var
+  // mellom to andre.
+  const withStored = m => {
+    const r = pr[m.key];
+    return r && r.home !== undefined && r.away !== undefined
+      ? { ...m, home: r.home, away: r.away }
+      : m;
+  };
+
+  if (gs.length === 2) {
+    const size = Math.min(st[0].length, st[1].length);
+    return Array.from({ length: size }, (_, i) => withStored({
+      key: 'match_' + i,
+      label: i === 0 ? 'FINALE' : `${2 * i + 1}. PLASS`,
+      home: (st[0][i] || {}).name, away: (st[1][i] || {}).name,
+      homeFrom: `A${i + 1}`, awayFrom: `B${i + 1}`,
+    }));
+  }
+  return [
+    { key:'semi_0', label:'SEMIFINALE 1', home: top(0), away: top(1),
+      homeFrom:'Vinner gruppe A', awayFrom:'Vinner gruppe B' },
+    { key:'semi_1', label:'SEMIFINALE 2', home: top(2), away: top(3),
+      homeFrom:'Vinner gruppe C', awayFrom:'Vinner gruppe D' },
+    { key:'match_0', label:'FINALE',
+      home: playoffWinner(pr,'semi_0'), away: playoffWinner(pr,'semi_1'),
+      homeFrom:'Vinner av semi 1', awayFrom:'Vinner av semi 2' },
+    { key:'match_1', label:'BRONSE',
+      home: playoffLoser(pr,'semi_0'), away: playoffLoser(pr,'semi_1'),
+      homeFrom:'Taper av semi 1', awayFrom:'Taper av semi 2' },
+  ].map(withStored);
+}
+
 // Pallen for begge formater, delt mellom appen og liveskjermen. Returnerer
 // null når det ikke finnes en vinner ennå — for grupper betyr det at finalen
 // ikke er spilt, for poengtavle at ikke alle har levert score.
@@ -1064,21 +1125,16 @@ function podium(t) {
     return { champion: rows[0].name, runnerUp: (rows[1]||{}).name, third: (rows[2]||{}).name };
   }
 
-  // Fire grupper: sluttspillet får semifinaler i steg 3. Til da kåres ingen.
-  if (gs.length > 2) return null;
-
+  // To eller fire grupper: finalen er alltid match_0. Navnene leses fra
+  // home/away i resultatet, ikke fra tabellen — det er hele poenget med å
+  // lagre dem.
   const pr = t.playoffResults || {};
-  const fin = pr['match_0'] || {}, bronze = pr['match_1'] || {};
-  if (!fin.winner || fin.winner === 'draw') return null;
-  const sA = calcStandings((gs[0]||{players:[]}).players, (gs[0]||{results:{}}).results, t.mode, dir);
-  const sB = calcStandings((gs[1]||{players:[]}).players, (gs[1]||{results:{}}).results, t.mode, dir);
-  const poName = (i, side) => side==='a' ? (sA[i]||{}).name : side==='b' ? (sB[i]||{}).name : undefined;
-  const champion = poName(0, fin.winner);
+  const champion = playoffWinner(pr, 'match_0');
   if (!champion) return null;
   return {
     champion,
-    runnerUp: fin.winner==='a' ? poName(0,'b') : poName(0,'a'),
-    third: poName(1, bronze.winner),
+    runnerUp: playoffLoser(pr, 'match_0'),
+    third: playoffWinner(pr, 'match_1'),
   };
 }
 
@@ -1403,12 +1459,6 @@ function renderTournamentView() {
   }).join('');
 
   // Playoffs
-  const sA = calcStandings((gs[0]||{players:[]}).players, (gs[0]||{results:{}}).results);
-  const sB = calcStandings((gs[1]||{players:[]}).players, (gs[1]||{results:{}}).results);
-  const pr = tState.playoffResults||{};
-  const size = gs.length === 2 ? Math.min(sA.length, sB.length) : 0;
-  // playoffResults lagrer vinnersiden ('a'/'b'), på samme form som gruppespillet
-  const poName = (i, side) => side==='a' ? (sA[i]||{}).name : side==='b' ? (sB[i]||{}).name : undefined;
   const pod = podium(tState) || {};
   const { champion, runnerUp, third } = pod;
 
@@ -1433,25 +1483,35 @@ function renderTournamentView() {
       </div>`;
   } else { winnerSection.innerHTML = ''; }
 
-  document.getElementById('t-playoff-matches').innerHTML = Array.from({length:size},(_,i)=>{
-    // Kamp i spiller om plass 2i+1 og 2i+2: 0=finale, 1=3. plass, 2=5. plass osv.
-    const label=i===0?'FINALE':`${2*i+1}. PLASS`;
-    const pA=sA[i]?sA[i].name:`A${i+1}`;
-    const pB=sB[i]?sB[i].name:`B${i+1}`;
-    const r=pr['match_'+i]||{};
+  const pm = playoffMatches(tState);
+  const pr = tState.playoffResults || {};
+  const hint = document.getElementById('t-playoff-hint');
+  if (hint) hint.textContent = pm.length
+    ? 'Trykk på en kamp for å registrere resultat'
+    : 'Én gruppe — vinneren er den som topper tabellen.';
+
+  document.getElementById('t-playoff-matches').innerHTML = pm.map(m=>{
+    const r = pr[m.key] || {};
+    // Navnet mangler så lenge kampen foran ikke er spilt — vis hvor spilleren
+    // kommer fra i stedet for et tomt felt.
+    const home = m.home, away = m.away;
+    const ready = home !== undefined && away !== undefined;
+    const hName = home !== undefined ? escapeHTML(home) : `<span class="playoff-from">${escapeHTML(m.homeFrom||'?')}</span>`;
+    const aName = away !== undefined ? escapeHTML(away) : `<span class="playoff-from">${escapeHTML(m.awayFrom||'?')}</span>`;
     let badge='';
     if(tState.mode==='score'&&typeof r.homeScore==='number'&&typeof r.awayScore==='number') {
       const cls=r.winner==='a'?'res-a':r.winner==='b'?'res-b':'res-d';
       badge=`<span class="fix-badge ${cls}">${r.homeScore}–${r.awayScore}</span>`;
-    } else if(r.winner==='a') badge=`<span class="fix-badge res-a">${escapeHTML(pA)} vinner</span>`;
-    else if(r.winner==='b') badge=`<span class="fix-badge res-b">${escapeHTML(pB)} vinner</span>`;
+    } else if(r.winner==='a') badge=`<span class="fix-badge res-a">${escapeHTML(home)} vinner</span>`;
+    else if(r.winner==='b') badge=`<span class="fix-badge res-b">${escapeHTML(away)} vinner</span>`;
+    else if(!ready) badge=`<span class="fix-badge res-none">Venter</span>`;
     else badge=`<span class="fix-badge res-none">Trykk for å registrere</span>`;
-    return `<div class="playoff-card" onclick="openPlayoffDialog(${i})">
-      <div class="playoff-label ${i===0?'final':''}">${label}</div>
+    return `<div class="playoff-card${ready?'':' pending'}" ${ready?`onclick="openPlayoffDialog('${m.key}')"`:''}>
+      <div class="playoff-label ${m.key==='match_0'?'final':''}">${m.label}</div>
       <div class="fixture-row" style="border:none;padding:0;pointer-events:none;cursor:default;">
-        <span class="fix-team r" style="font-size:17px;font-weight:700;">${escapeHTML(pA)}</span>
+        <span class="fix-team r" style="font-size:17px;font-weight:700;">${hName}</span>
         <span class="fix-vs">vs</span>
-        <span class="fix-team" style="font-size:17px;font-weight:700;">${escapeHTML(pB)}</span>
+        <span class="fix-team" style="font-size:17px;font-weight:700;">${aName}</span>
         ${badge}
       </div>
     </div>`;
@@ -1481,23 +1541,24 @@ function openMatchDialog(gi, idx) {
   );
 }
 
-function openPlayoffDialog(idx) {
-  if (!tState.playoffResults) tState.playoffResults={};
-  const gs = groupsOf(tState);
-  const sA = calcStandings((gs[0]||{players:[]}).players, (gs[0]||{results:{}}).results);
-  const sB = calcStandings((gs[1]||{players:[]}).players, (gs[1]||{results:{}}).results);
-  const pA = sA[idx] ? sA[idx].name : `A${idx+1}`;
-  const pB = sB[idx] ? sB[idx].name : `B${idx+1}`;
-  const r = tState.playoffResults['match_'+idx]||{};
+function openPlayoffDialog(key) {
+  const m = playoffMatches(tState).find(x => x.key === key);
+  if (!m || m.home === undefined || m.away === undefined) {
+    showToast('Kampen foran må spilles først');
+    return;
+  }
+  const r = (tState.playoffResults || {})[key] || {};
   let scoreH = typeof r.homeScore==='number'?r.homeScore:0;
   let scoreA = typeof r.awayScore==='number'?r.awayScore:0;
   let hasScore = typeof r.homeScore==='number';
 
-  showMatchDialog(pA, pB, tState.mode,
+  showMatchDialog(m.home, m.away, tState.mode,
     (winner, loser, hs, as_) => {
-      const field = 'playoffResults/match_'+idx;
-      const value = winner===null ? null : {winner,loser,homeScore:hs,awayScore:as_,ts:Date.now()};
-      tWrite({ [field]: value });
+      // home/away lagres som navn: en ferdigspilt kamp skal ikke bytte
+      // deltakere fordi et gruppekampresultat endres i etterkant.
+      const value = winner===null ? null
+        : { winner, loser, home: m.home, away: m.away, homeScore: hs, awayScore: as_, ts: Date.now() };
+      tWrite({ ['playoffResults/' + key]: value });
     },
     r, scoreH, scoreA, hasScore
   );

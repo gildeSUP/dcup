@@ -224,7 +224,6 @@ eq('miniliga er uavhengig av gruppeorden',
      .map(g=>calcStandings(g, mini, 'wl').map(r=>r.name).join('|'))).size, 1);
 
 // Innbyrdes oppgjør skal fortsatt slå gjennom for to likestilte
-const two = res([['A','B',1,0],['A','C',1,0],['B','C',1,0],['C','A',0,0]]);
 eq('to likestilte skilles av innbyrdes oppgjør',
    calcStandings(['A','B'], res([['A','B',1,0]]), 'wl').map(r=>r.name), ['A','B']);
 eq('og motsatt vei', calcStandings(['A','B'], res([['A','B',0,1]]), 'wl').map(r=>r.name), ['B','A']);
@@ -245,6 +244,75 @@ const twoUnfinished = { groups:[
   { name:'B', players:['C','D'], fixtures:[['C','D']], results:{} },
 ], mode:'wl', playoffResults:{} };
 eq('to grupper uten spilt finale gir ingen pall', podium(twoUnfinished), null);
+
+// ---------- playoffMatches ----------
+section('playoffMatches');
+function grp(name, players, results) { return { name, players, fixtures: roundRobin(players), results: results||{} }; }
+const won = ps => res(roundRobin(ps).map(([h,a]) => [h,a, ps.indexOf(h)<ps.indexOf(a)?1:0, ps.indexOf(h)<ps.indexOf(a)?0:1]));
+
+eq('én gruppe har ingen sluttspillkamper', playoffMatches(oneGroup), []);
+
+const t2 = { mode:'wl', playoffResults:{}, groups:[
+  grp('A',['A1','A2','A3'], won(['A1','A2','A3'])),
+  grp('B',['B1','B2','B3'], won(['B1','B2','B3'])),
+]};
+eq('to grupper: én kamp per tabellplass', playoffMatches(t2).map(m=>m.key), ['match_0','match_1','match_2']);
+eq('to grupper: A mot B på hver plass', playoffMatches(t2).map(m=>`${m.home} vs ${m.away}`),
+   ['A1 vs B1','A2 vs B2','A3 vs B3']);
+eq('to grupper: match_0 er finalen', playoffMatches(t2)[0].label, 'FINALE');
+eq('to grupper: plassering i labelen', playoffMatches(t2).map(m=>m.label), ['FINALE','3. PLASS','5. PLASS']);
+
+const t4 = { mode:'wl', playoffResults:{}, groups:[
+  grp('A',['A1','A2','A3'], won(['A1','A2','A3'])),
+  grp('B',['B1','B2','B3'], won(['B1','B2','B3'])),
+  grp('C',['C1','C2','C3'], won(['C1','C2','C3'])),
+  grp('D',['D1','D2','D3'], won(['D1','D2','D3'])),
+]};
+eq('fire grupper: to semier, finale og bronse',
+   playoffMatches(t4).map(m=>m.key), ['semi_0','semi_1','match_0','match_1']);
+eq('semi 1 er A mot B, semi 2 er C mot D',
+   playoffMatches(t4).slice(0,2).map(m=>`${m.home} vs ${m.away}`), ['A1 vs B1','C1 vs D1']);
+eq('finalen står tom før semiene er spilt',
+   playoffMatches(t4)[2].home, undefined);
+eq('finalen viser hvor spillerne kommer fra',
+   [playoffMatches(t4)[2].homeFrom, playoffMatches(t4)[2].awayFrom],
+   ['Vinner av semi 1','Vinner av semi 2']);
+eq('fire grupper: match_0 er fortsatt finalen', playoffMatches(t4)[2].label, 'FINALE');
+
+// spill semiene og se at finalen og bronsen fylles ut
+const t4Played = { ...t4, playoffResults: {
+  semi_0: { winner:'a', home:'A1', away:'B1', loser:'B1' },
+  semi_1: { winner:'b', home:'C1', away:'D1', loser:'C1' },
+}};
+eq('finalen får semivinnerne', `${playoffMatches(t4Played)[2].home} vs ${playoffMatches(t4Played)[2].away}`, 'A1 vs D1');
+eq('bronsen får semitaperne', `${playoffMatches(t4Played)[3].home} vs ${playoffMatches(t4Played)[3].away}`, 'B1 vs C1');
+
+// ferdigspilt kamp beholder navnene sine selv om tabellen endres
+const stored = { ...t2, playoffResults: { match_0: { winner:'a', home:'A2', away:'B3', loser:'B3' } } };
+eq('lagret kamp viser lagrede navn, ikke tabellens',
+   `${playoffMatches(stored)[0].home} vs ${playoffMatches(stored)[0].away}`, 'A2 vs B3');
+
+// ---------- podium for alle gruppetall ----------
+section('podium per gruppetall');
+eq('to grupper uten finale gir ingen pall', podium(t2), null);
+eq('fire grupper uten finale gir ingen pall', podium(t4), null);
+const t2Done = { ...t2, playoffResults: {
+  match_0: { winner:'a', home:'A1', away:'B1', loser:'B1' },
+  match_1: { winner:'b', home:'A2', away:'B2', loser:'A2' },
+}};
+eq('to grupper: vinner, taper og bronsevinner', podium(t2Done),
+   { champion:'A1', runnerUp:'B1', third:'B2' });
+const t4Done = { ...t4Played, playoffResults: { ...t4Played.playoffResults,
+  match_0: { winner:'b', home:'A1', away:'D1', loser:'A1' },
+  match_1: { winner:'a', home:'B1', away:'C1', loser:'C1' },
+}};
+eq('fire grupper: pallen leses av finalen og bronsen', podium(t4Done),
+   { champion:'D1', runnerUp:'A1', third:'B1' });
+eq('uavgjort finale kårer ingen',
+   podium({ ...t2, playoffResults:{ match_0:{ winner:'draw', home:'A1', away:'B1' } } }), null);
+eq('navnene kommer fra resultatet, ikke tabellen',
+   podium({ ...t2, playoffResults:{ match_0:{ winner:'a', home:'Utenfor tabellen', away:'B1', loser:'B1' } } }).champion,
+   'Utenfor tabellen');
 
 // ---------- board ----------
 section('boardStandings');
