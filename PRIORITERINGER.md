@@ -45,11 +45,20 @@ deretter et gruppekampresultat slik at en annen spiller (Y) overtok
 tabelltoppen i gruppa. `podium()` viste fortsatt X som mester, og
 finale-oppsettet viste fortsatt «X mot [motstander]» — ikke det nye Y.
 
-### 7. Turneringslista har vilkårlig rekkefølge
-`dcup.js:308` itererer `Object.entries(tournaments)`. Nøklene er UUID-er, så
-Firebase returnerer dem sortert på tilfeldig streng. `created` finnes allerede
-på hver turnering — sorter på den. Gjelder også rotasjonsrekkefølgen på
-liveskjermen (`visibleDispTournaments`, `dcup.js:1409`).
+### 7. ✅ Fikset
+Ny `sortedTournaments(obj)` i UTILS sorterer på `created` stigende. Mangler
+`created` (data fra før feltet fantes), havner turneringen sist, og like
+verdier faller tilbake på nøkkelen — rekkefølgen er dermed lik på alle
+klienter, ikke bare stabil lokalt.
+
+Tatt i bruk fire steder: `renderTournamentList`, `renderJoinList`,
+`renderPeopleList` (ikonene per deltaker) og `visibleDispTournaments`
+(rotasjonsrekkefølgen på liveskjermen).
+
+**Verifisert** ved å skrive fire turneringer i en annen rekkefølge enn
+`created` — inkludert én uten `created`: rå-rekkefølgen fra basen var
+`Sist, Først, Uten created, Midten`, mens lista, meld på-dialogen og
+liveskjermens rotasjon alle viste `Først, Midten, Sist, Uten created`.
 
 ### 8. ✅ Fikset i `22b7f0a`
 Ny `isSignupLocked()` — sperren gjelder bare gruppespill.
@@ -76,11 +85,17 @@ fjerning av spiller, nullstilling og tom tavle.
 `resetTournament` nullstiller, men en turnering opprettet ved et uhell blir
 stående for alltid. Trenger minst «slett turnering».
 
-### 11. `addTournament` uten feilhåndtering
-`dcup.js:617`: `await db.ref().update(updates)` står uten `try/catch`, i
-motsetning til alt annet. Offline → uhåndtert rejection, ingen tilbakemelding,
-modalen blir stående. Knappen deaktiveres heller ikke, så dobbeltklikk lager
-to turneringer.
+### 11. ✅ Fikset
+`addTournament` følger nå samme mønster som `saveJoin` og `confirmStart`:
+knappen (`#add-tournament-btn`) deaktiveres og får teksten «Oppretter…», og
+`db.ref().update()` ligger i `try/catch`. Feiler den, vises «Kunne ikke
+opprette — prøv igjen», knappen blir aktiv igjen og dialogen står åpen med alt
+utfylt, så et nytt forsøk er ett klikk unna.
+
+**Verifisert** med skrivingen tvunget til å feile: toast vises, dialogen står
+åpen, ingen turnering opprettes, og vi hopper ikke inn i turneringsvisningen
+for noe som ikke ble lagret. Nytt forsøk uten feil lykkes. Tre raske klikk på
+«Opprett» ga én turnering, ikke tre.
 
 ---
 

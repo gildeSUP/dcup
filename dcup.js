@@ -29,6 +29,19 @@ function showToast(msg) {
 function lockBodyScroll() { document.body.style.overflow = 'hidden'; }
 function unlockBodyScroll() { document.body.style.overflow = ''; }
 
+// Turneringsnøklene er UUID-er, så Firebase gir dem tilbake sortert på
+// tilfeldig streng — lista hoppet rundt for hver klient. `created` settes på
+// alle nye turneringer; mangler den (data laget før feltet fantes), faller vi
+// tilbake på nøkkelen, slik at rekkefølgen i det minste er lik overalt.
+function sortedTournaments(obj) {
+  return Object.entries(obj || {}).sort((a, b) => {
+    const ca = typeof a[1]?.created === 'number' ? a[1].created : Infinity;
+    const cb = typeof b[1]?.created === 'number' ? b[1].created : Infinity;
+    if (ca !== cb) return ca - cb;
+    return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0;
+  });
+}
+
 // ===== SPORTS CONFIG =====
 const SPORTS = [
   { id:'pingpong', label:'Bordtennis', icon:'🏓', modes:['wl','score'] },
@@ -311,7 +324,7 @@ function updateEventURL(eventId) {
 
 function renderTournamentList() {
   const list = document.getElementById('tournament-list');
-  const entries = Object.entries(tournaments);
+  const entries = sortedTournaments(tournaments);
   if (!entries.length) {
     list.innerHTML = '<div class="muted" style="text-align:center;padding:1rem;">Ingen turneringer ennå. Legg til en!</div>';
     return;
@@ -375,9 +388,9 @@ function renderPeopleList() {
   const wrap = document.getElementById('people-list');
   if (!people.length) { wrap.innerHTML = '<p class="muted">Ingen deltakere ennå.</p>'; return; }
   wrap.innerHTML = people.map(p => {
-    const sports = Object.values(tournaments)
-      .filter(t => (t.players||[]).includes(p.name))
-      .map(t => (SPORTS.find(s=>s.id===t.sport)||SPORTS[SPORTS.length-1]).icon);
+    const sports = sortedTournaments(tournaments)
+      .filter(([, t]) => (t.players||[]).includes(p.name))
+      .map(([, t]) => (SPORTS.find(s=>s.id===t.sport)||SPORTS[SPORTS.length-1]).icon);
     const key = safeKey(p.name);
     return `<label class="signup-row" style="cursor:default;">
       <span class="join-icon">🙋</span>
@@ -537,7 +550,7 @@ function hideJoinDialog() { document.getElementById('join-overlay').style.displa
 // Alle turneringer er haket av som standard — man klikker bort de man ikke
 // vil melde denne personen på.
 function renderJoinList() {
-  const entries = Object.entries(tournaments);
+  const entries = sortedTournaments(tournaments);
   const wrap = document.getElementById('join-list');
   if (!entries.length) {
     wrap.innerHTML = '<p class="muted">Ingen turneringer å melde seg på ennå.</p>';
@@ -641,7 +654,20 @@ async function addTournament() {
   newParticipants.forEach(n => {
     updates['events/'+currentEventId+'/people/'+safeKey(n)] = { name: n, joined: Date.now() };
   });
-  await db.ref().update(updates);
+
+  // Uten dette ga et dobbeltklikk to turneringer (id-en lages på nytt hver
+  // gang), og en feilet skriving offline ga en uhåndtert rejection: modalen ble
+  // stående uten et eneste tegn på at ingenting var lagret.
+  const btn = document.getElementById('add-tournament-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Oppretter…'; }
+  try {
+    await db.ref().update(updates);
+  } catch (err) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Opprett'; }
+    showToast('Kunne ikke opprette — prøv igjen');
+    return;
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Opprett'; }
   hideAddTournament();
   openTournament(id);
 }
@@ -1785,7 +1811,7 @@ async function loadDisplayScreen(eventId) {
 // Skjuler turneringer som ikke er startet ennå, eller som er markert
 // fullført — liveskjermen skal bare vise det som faktisk pågår.
 function visibleDispTournaments() {
-  return Object.entries(dispTournaments).filter(([,t]) => isStarted(t) && !t.hideFromDisplay);
+  return sortedTournaments(dispTournaments).filter(([,t]) => isStarted(t) && !t.hideFromDisplay);
 }
 
 // ===== VINNERAVSLØRING =====
