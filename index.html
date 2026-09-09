@@ -298,7 +298,7 @@ label.signup-row { display: flex; align-items: center; gap: 10px; padding: 9px 0
 label.signup-row:last-child { border-bottom: none; }
 label.signup-row input { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--accent); }
 .join-icon { font-size: 20px; }
-.join-info { display: flex; flex-direction: column; }
+.join-info { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .join-name-txt { font-size: 14px; font-weight: 600; }
 .join-sub { font-size: 11px; color: var(--text2); }
 .copy-btn { font-size: 12px; padding: 5px 10px; border-radius: var(--radius); border: 0.5px solid var(--border2); background: var(--bg2); color: var(--text2); cursor: pointer; }
@@ -899,14 +899,39 @@ function renderPeopleList() {
     const sports = Object.values(tournaments)
       .filter(t => (t.players||[]).includes(p.name))
       .map(t => (SPORTS.find(s=>s.id===t.sport)||SPORTS[SPORTS.length-1]).icon);
+    const key = safeKey(p.name);
     return `<label class="signup-row" style="cursor:default;">
       <span class="join-icon">🙋</span>
       <span class="join-info">
         <span class="join-name-txt">${escapeHTML(p.name)}</span>
         <span class="join-sub">${sports.length ? sports.join(' ') : 'Ingen turneringer ennå'}</span>
       </span>
+      <button class="board-del" title="Fjern deltaker" onclick="removePerson('${key}')">×</button>
     </label>`;
   }).join('');
+}
+
+// Fjerner personen fra eventet og fra players-lista i alle turneringer de er
+// med i — ellers ville de stått igjen som spiller uten å være i deltakerlista.
+async function removePerson(key) {
+  const p = eventPeople[key];
+  if (!p) return;
+  if (!confirm(`Fjerne ${p.name}? De fjernes også fra turneringene de er med i.`)) return;
+  const updates = {};
+  updates['events/'+currentEventId+'/people/'+key] = null;
+  Object.entries(tournaments).forEach(([tid, t]) => {
+    const current = t.players || [];
+    if (current.includes(p.name)) {
+      updates['events/'+currentEventId+'/tournaments/'+tid+'/players'] = current.filter(n => n !== p.name);
+    }
+  });
+  try {
+    await db.ref().update(updates);
+    showToast('Deltaker fjernet');
+    renderPeopleList();
+  } catch (err) {
+    showToast('Kunne ikke fjerne — prøv igjen');
+  }
 }
 
 function showJoinDialog() {
