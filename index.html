@@ -305,12 +305,34 @@
 
 <script src="https://cdn.jsdelivr.net/npm/firebase@9.23.0/firebase-app-compat.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/firebase@9.23.0/firebase-database-compat.min.js"></script>
-<!-- Unikt versjonsnummer per sidelast, så en push alltid treffer umiddelbart
-     uten at noen må huske å øke et tall. Koster én nedlasting av dcup.js per
-     sidevisning. Lagt inn dynamisk fordi et statisk src ikke kan variere;
-     async=false bevarer rekkefølgen etter firebase-skriptene over. -->
 <script>
 (function () {
+  // Blir jsDelivr blokkert — gjestenett, annonseblokkering, nedetid — er
+  // firebase udefinert. Uten denne sjekken kaster dcup.js på første linje,
+  // resten av fila kjører aldri, og brukeren får en side der ingenting
+  // reagerer uten et ord om hvorfor. Sjekker begge skriptene: laster bare
+  // det første, finnes firebase uten firebase.database.
+  if (typeof firebase === 'undefined' || !firebase.database) {
+    document.body.innerHTML =
+      '<div style="max-width:420px;margin:15vh auto;padding:0 1.5rem;text-align:center;' +
+      'font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',sans-serif;">' +
+      '<div style="font-size:44px;">📡</div>' +
+      '<h1 style="font-size:20px;margin:0.75rem 0 0.5rem;">Får ikke lastet dCup</h1>' +
+      '<p style="font-size:15px;line-height:1.5;opacity:0.7;margin:0 0 1.25rem;">' +
+      'Nettverket ser ut til å blokkere <code>cdn.jsdelivr.net</code>, som appen ' +
+      'henter databasen sin fra. Dette skjer ofte på gjestenett og med ' +
+      'annonseblokkering.</p>' +
+      '<p style="font-size:15px;line-height:1.5;opacity:0.7;margin:0 0 1.5rem;">' +
+      'Prøv mobildata eller et annet nett.</p>' +
+      '<button onclick="location.reload()" style="padding:12px 20px;border-radius:10px;' +
+      'border:none;background:#2563eb;color:#fff;font-size:15px;font-weight:600;' +
+      'cursor:pointer;font-family:inherit;">Prøv igjen</button></div>';
+    return;
+  }
+  // Unikt versjonsnummer per sidelast, så en push alltid treffer umiddelbart
+  // uten at noen må huske å øke et tall. Koster én nedlasting av dcup.js per
+  // sidevisning. Lagt inn dynamisk fordi et statisk src ikke kan variere;
+  // async=false bevarer rekkefølgen etter firebase-skriptene over.
   var s = document.createElement('script');
   s.src = 'dcup.js?v=' + Date.now();
   s.async = false;

@@ -95,7 +95,7 @@ to turneringer.
 | 16 | Enter i poengtavlas navnefelt gjør ingenting (fungerer i de to andre feltene) | `index.html:198` |
 | 17 | «Ferdig»-merket settes når gruppespillet er ferdig, før finalen er spilt | `dcup.js:843`, `332` |
 | 18 | Liveskjermen lar TV-en sovne — `navigator.wakeLock` er noen få linjer | `dcup.js:1389` |
-| 19 | Blokkeres jsDelivr på gjestenettet dør appen uten feilmelding. Sjekk at `firebase` finnes før `initializeApp` | `index.html:286` |
+| 19 | ✅ Fikset. `index.html` sjekker `firebase` **og** `firebase.database` før `dcup.js` i det hele tatt injiseres, og viser en forklarende side med «Prøv igjen» i stedet. Verifisert med CDN-en blokkert, med bare app-compat lastet, og normalt | `index.html` |
 | 20 | Event-sider er offentlige og kan indekseres av Google — `<meta name="robots" content="noindex">` | `index.html:6` |
 | 21 | «Avslutt» på liveskjermen går til forsiden, ikke tilbake til eventet | `dcup.js:1386` |
 | 22 | Fremdriftsbaren animeres ikke før første rotasjon, og ikke i det hele tatt med bare én turnering | `dcup.js:1587` |
