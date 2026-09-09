@@ -291,18 +291,16 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
 .chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; }
 .chip.live { background: var(--green-bg); color: var(--green-text); }
-.me-chip { font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 20px; background: var(--accent-bg); color: var(--accent-text); }
-.signup-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 0.5px solid var(--border); cursor: pointer; }
-.signup-row:last-child { border-bottom: none; }
-.signup-row.locked { opacity: 0.45; cursor: default; }
-.signup-row input { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--accent); }
+/* label.signup-row (not just .signup-row): needs to out-rank ".form-group label" below,
+   which also matches these rows since they're labels inside a .form-group, and would
+   otherwise force display:block + uppercase text, breaking the layout onto multiple lines. */
+label.signup-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 0.5px solid var(--border); cursor: pointer; text-transform: none; font-size: inherit; font-weight: normal; color: var(--text); letter-spacing: normal; margin-bottom: 0; }
+label.signup-row:last-child { border-bottom: none; }
+label.signup-row input { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--accent); }
 .join-icon { font-size: 20px; }
 .join-info { display: flex; flex-direction: column; }
 .join-name-txt { font-size: 14px; font-weight: 600; }
 .join-sub { font-size: 11px; color: var(--text2); }
-.tc-join { font-size: 11px; font-weight: 600; padding: 4px 9px; border-radius: 20px; border: 0.5px solid var(--border2); background: var(--bg2); color: var(--text2); cursor: pointer; flex-shrink: 0; }
-.tc-join.on { background: var(--accent-bg); border-color: var(--accent); color: var(--accent-text); }
-.tc-join:disabled { opacity: 0.4; cursor: default; }
 .copy-btn { font-size: 12px; padding: 5px 10px; border-radius: var(--radius); border: 0.5px solid var(--border2); background: var(--bg2); color: var(--text2); cursor: pointer; }
 .copy-btn:hover { color: var(--text); background: var(--bg3); }
 
@@ -363,8 +361,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
       <div class="muted" id="event-desc-display" style="font-size:12px;"></div>
     </div>
     <div class="header-right">
-      <span class="me-chip" id="me-chip" style="display:none;"></span>
-      <button class="copy-btn" id="join-event-btn" onclick="showJoinDialog()">Delta</button>
+      <button class="copy-btn" onclick="showJoinDialog()">👋 Meld på</button>
       <button class="copy-btn" onclick="copyEventLink()">Del link</button>
       <div style="display:flex;align-items:center;gap:5px;">
         <div class="sync-dot" id="sync-dot" style="background:#16a34a;"></div>
@@ -386,14 +383,14 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 
 <!-- DELTA-MODAL -->
 <div id="join-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:500;align-items:flex-end;justify-content:center;">
-  <div style="background:var(--bg);border-radius:var(--radius-lg) var(--radius-lg) 0 0;width:100%;max-width:540px;padding:1.25rem 1.25rem 2.5rem;animation:slideUp 0.22s ease;">
+  <div style="background:var(--bg);border-radius:var(--radius-lg) var(--radius-lg) 0 0;width:100%;max-width:540px;max-height:85vh;overflow-y:auto;padding:1.25rem 1.25rem 2.5rem;animation:slideUp 0.22s ease;">
     <div style="width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 1rem;"></div>
-    <div style="font-size:16px;font-weight:700;margin-bottom:0.35rem;">Meld deg på</div>
-    <p class="muted mb1">Navnet vises i tabellene og på liveskjermen.</p>
+    <div style="font-size:16px;font-weight:700;margin-bottom:0.35rem;">Meld på deltaker</div>
+    <p class="muted mb1">Skriv inn navn og velg turneringer. Alle kan legge til alle.</p>
     <div class="form-group">
-      <label>Navnet ditt</label>
-      <input type="text" id="join-name" placeholder="f.eks. Christian" maxlength="40" />
-      <div class="form-error" id="join-name-error">Skriv inn navnet ditt</div>
+      <label>Navn</label>
+      <input type="text" id="join-name" placeholder="Navn på deltaker…" maxlength="40" />
+      <div class="form-error" id="join-name-error">Skriv inn et navn</div>
     </div>
     <div class="form-group">
       <label>Turneringer</label>
@@ -408,7 +405,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 
 <!-- ADD TOURNAMENT MODAL -->
 <div id="add-tournament-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:500;display:none;align-items:flex-end;justify-content:center;">
-  <div style="background:var(--bg);border-radius:var(--radius-lg) var(--radius-lg) 0 0;width:100%;max-width:540px;padding:1.25rem 1.25rem 2.5rem;animation:slideUp 0.22s ease;">
+  <div style="background:var(--bg);border-radius:var(--radius-lg) var(--radius-lg) 0 0;width:100%;max-width:540px;max-height:85vh;overflow-y:auto;padding:1.25rem 1.25rem 2.5rem;animation:slideUp 0.22s ease;">
     <div style="width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 1rem;"></div>
     <div style="font-size:16px;font-weight:700;margin-bottom:1.25rem;">Ny turnering</div>
     <div class="form-group">
@@ -432,8 +429,9 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
       <div class="mode-grid" id="scoredir-grid"></div>
     </div>
     <div class="form-group" id="prefill-group" style="display:none;">
-      <label>Legg til deltakere</label>
-      <div id="prefill-list"></div>
+      <label>Deltakere</label>
+      <div class="mode-grid" id="prefill-choice-grid"></div>
+      <div id="prefill-list" style="margin-top:0.75rem;"></div>
     </div>
     <div style="display:flex;gap:8px;margin-top:0.5rem;">
       <button class="btn-ghost" style="flex:1;" onclick="hideAddTournament()">Avbryt</button>
@@ -586,6 +584,10 @@ function showToast(msg) {
   t.textContent=msg; t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'),2200);
 }
+// Bunn-modalene har sin egen scroll (overflow-y:auto) for langt innhold —
+// uten dette kan siden bak fortsatt scrolle samtidig, som er forvirrende.
+function lockBodyScroll() { document.body.style.overflow = 'hidden'; }
+function unlockBodyScroll() { document.body.style.overflow = ''; }
 
 // ===== SPORTS CONFIG =====
 const SPORTS = [
@@ -638,19 +640,50 @@ function selectSport(id) {
   renderSportGrid();
 }
 
-function renderPrefillList() {
-  const people = Object.values(eventPeople).sort((a,b)=>(a.joined||0)-(b.joined||0));
+const PREFILL_CHOICES = {
+  all:    { label:'Alle deltakere', icon:'👥' },
+  none:   { label:'Ingen', icon:'🚫' },
+  manual: { label:'Velg manuelt', icon:'✅' },
+};
+let prefillChoice = 'none';
+let prefillManualSelected = {};
+
+function renderPrefillGroup() {
   const group = document.getElementById('prefill-group');
+  const people = Object.values(eventPeople).sort((a,b)=>(a.joined||0)-(b.joined||0));
   group.style.display = people.length ? 'block' : 'none';
   if (!people.length) return;
-  document.getElementById('prefill-list').innerHTML = people.map((p,i) => `
-    <label class="signup-row">
-      <input type="checkbox" data-name-idx="${i}" checked />
-      <span class="join-info"><span class="join-name-txt">${escapeHTML(p.name)}</span></span>
-    </label>`).join('');
-  prefillNames = people.map(p=>p.name);
+  document.getElementById('prefill-choice-grid').innerHTML = Object.keys(PREFILL_CHOICES).map(c => `
+    <button type="button" class="mode-btn ${c===prefillChoice?'selected':''}" onclick="selectPrefillChoice('${c}')">
+      <span class="mode-btn-icon">${PREFILL_CHOICES[c].icon}</span>
+      <span class="mode-btn-label">${PREFILL_CHOICES[c].label}</span>
+    </button>`).join('');
+  renderPrefillList(people);
 }
-let prefillNames = [];
+
+function selectPrefillChoice(c) {
+  prefillChoice = c;
+  renderPrefillGroup();
+}
+
+function renderPrefillList(people) {
+  const list = document.getElementById('prefill-list');
+  if (prefillChoice !== 'manual') { list.innerHTML = ''; return; }
+  list.innerHTML = people.map(p => {
+    const key = safeKey(p.name);
+    const checked = !!prefillManualSelected[key];
+    return `<label class="signup-row">
+      <input type="checkbox" ${checked?'checked':''} onchange="togglePrefillManual('${key}')" />
+      <span class="join-info"><span class="join-name-txt">${escapeHTML(p.name)}</span></span>
+    </label>`;
+  }).join('');
+}
+
+function togglePrefillManual(key) {
+  if (prefillManualSelected[key]) delete prefillManualSelected[key];
+  else prefillManualSelected[key] = true;
+  renderPrefillList(Object.values(eventPeople).sort((a,b)=>(a.joined||0)-(b.joined||0)));
+}
 
 function renderFormatGrid() {
   document.getElementById('format-grid').innerHTML = Object.keys(FORMATS).map(f => `
@@ -743,28 +776,10 @@ async function doCreateEvent() {
 }
 
 // ===== DELTAKERE =====
-// Hvem du er, husket per event i denne nettleseren. Ingen innlogging:
-// dette er en bekvemmelighet, ikke en identitet vi kan stole på.
-let myName = null;
+// Ingen innlogging, ingen "identitet": alle kan melde på alle, når som helst.
+// eventPeople er bare en rullerende liste over navn som er brukt i eventet,
+// til bruk når man skal velge deltakere for en ny turnering.
 let eventPeople = {};
-
-function meKey(eventId) { return 'dcup-me-' + eventId; }
-function loadMe(eventId) {
-  try { myName = localStorage.getItem(meKey(eventId)) || null; }
-  catch (err) { myName = null; }
-}
-function saveMe(eventId, name) {
-  myName = name;
-  try { localStorage.setItem(meKey(eventId), name); } catch (err) {}
-}
-
-// En turnering er startet når trekningen er gjort, eller når noen har
-// levert score på en poengtavle. Da kan man ikke melde seg på lenger.
-function isStarted(t) {
-  if (isBoard(t)) return Object.keys(t.scores||{}).length > 0;
-  return (t.groupA||[]).length > 0;
-}
-function isSignedUp(t, name) { return (t.players||[]).includes(name); }
 
 // ===== LOAD EVENT =====
 let currentEventId = null;
@@ -788,18 +803,15 @@ async function loadEvent(eventId, focusTId) {
   document.getElementById('event-desc-display').textContent = meta.desc || '';
   document.title = meta.name + ' · dCup';
 
-  loadMe(eventId);
   peopleRef = db.ref('events/'+eventId+'/people');
   peopleRef.on('value', snap => {
     eventPeople = snap.val() || {};
-    renderMeChip();
   });
 
   eventRef = db.ref('events/'+eventId+'/tournaments');
   eventRef.on('value', snap => {
     tournaments = snap.val() || {};
     renderTournamentList();
-    renderMeChip();
     if (focusTId && tournaments[focusTId]) {
       openTournament(focusTId);
     }
@@ -836,7 +848,6 @@ function renderTournamentList() {
         <div class="tc-meta">${sport.label} · ${MODES[t.mode]?.label||t.mode}</div>
       </div>
       <span class="tc-badge ${done?'':'pending'}">${done?'Ferdig':total?played+'/'+total+' spilt':'Sett opp'}</span>
-      ${signupBtn(id, t)}
     </div>`;
   }).join('');
 }
@@ -856,39 +867,18 @@ async function setSignup(tid, name, join) {
   }
 }
 
-function renderMeChip() {
-  const chip = document.getElementById('me-chip');
-  const btn = document.getElementById('join-event-btn');
-  if (!chip || !btn) return;
-  if (myName) {
-    // Bare navnet: antall påmeldinger står allerede på hvert kort, og
-    // headeren har lite plass på mobil
-    const n = Object.values(tournaments).filter(t => isSignedUp(t, myName)).length;
-    chip.textContent = myName;
-    chip.title = `Påmeldt ${n} ${n===1?'turnering':'turneringer'}`;
-    chip.style.display = 'inline-block';
-    btn.textContent = 'Endre';
-  } else {
-    chip.style.display = 'none';
-    chip.title = '';
-    btn.textContent = 'Delta';
-  }
-}
-
 function showJoinDialog() {
-  document.getElementById('join-name').value = myName || '';
+  document.getElementById('join-name').value = '';
   document.getElementById('join-name-error').style.display = 'none';
   renderJoinList();
   document.getElementById('join-overlay').style.display = 'flex';
+  lockBodyScroll();
 }
-document.getElementById('join-name')?.addEventListener('input', renderJoinList);
-function hideJoinDialog() { document.getElementById('join-overlay').style.display = 'none'; }
+function hideJoinDialog() { document.getElementById('join-overlay').style.display = 'none'; unlockBodyScroll(); }
 
-// Boksene viser påmeldingene til navnet som står i feltet. Lagre skriver
-// hele påmeldingen for det navnet, så lista må stemme med det navnet —
-// ellers ville tomme bokser meldt noen av.
+// Alle turneringer er haket av som standard — man klikker bort de man ikke
+// vil melde denne personen på.
 function renderJoinList() {
-  const who = (document.getElementById('join-name').value || '').trim();
   const entries = Object.entries(tournaments);
   const wrap = document.getElementById('join-list');
   if (!entries.length) {
@@ -897,67 +887,41 @@ function renderJoinList() {
   }
   wrap.innerHTML = entries.map(([id, t]) => {
     const sport = SPORTS.find(s=>s.id===t.sport)||SPORTS[SPORTS.length-1];
-    const started = isStarted(t);
-    const on = who && isSignedUp(t, who);
-    return `<label class="signup-row${started?' locked':''}">
-      <input type="checkbox" data-tid="${id}" ${on?'checked':''} ${started?'disabled':''} />
+    return `<label class="signup-row">
+      <input type="checkbox" data-tid="${id}" checked />
       <span class="join-icon">${sport.icon}</span>
       <span class="join-info">
         <span class="join-name-txt">${escapeHTML(t.name)}</span>
-        <span class="join-sub">${sport.label}${started?' · startet':''}</span>
+        <span class="join-sub">${sport.label}</span>
       </span>
     </label>`;
   }).join('');
 }
 
+// Alltid additivt: legger navnet til i de valgte turneringene, fjerner aldri
+// noen. Alle kan melde på alle, når som helst — ingen identitet å holde styr på.
 async function saveJoin() {
   const input = document.getElementById('join-name');
   const name = input.value.trim();
   const errEl = document.getElementById('join-name-error');
-  if (!name) { errEl.textContent = 'Skriv inn navnet ditt'; errEl.style.display = 'block'; return; }
+  if (!name) { errEl.textContent = 'Skriv inn et navn'; errEl.style.display = 'block'; return; }
   errEl.style.display = 'none';
 
   const btn = document.getElementById('join-save-btn');
   btn.disabled = true; btn.textContent = 'Lagrer…';
 
-  // Navnet huskes i denne nettleseren, men bare som bekvemmelighet: det
-  // fyller ut feltet neste gang og lar kortene vise din egen status.
-  // Ingen innlogging, og to like navn er appens minste problem.
-  saveMe(currentEventId, name);
   try {
     await db.ref('events/'+currentEventId+'/people/'+safeKey(name))
-      .set({ name, joined: Date.now() });
+      .update({ name, joined: Date.now() });
     for (const box of document.querySelectorAll('#join-list input[type=checkbox]')) {
-      if (box.disabled) continue;
-      await setSignup(box.dataset.tid, name, box.checked);
+      if (box.checked) await setSignup(box.dataset.tid, name, true);
     }
-    showToast('Påmeldingen er lagret');
+    showToast('Lagt til!');
     hideJoinDialog();
   } catch (err) {
-    showToast('Kunne ikke lagre påmeldingen — prøv igjen');
+    showToast('Kunne ikke lagre — prøv igjen');
   }
   btn.disabled = false; btn.textContent = 'Lagre';
-}
-
-async function toggleSignup(tid) {
-  if (!myName) { showJoinDialog(); return; }
-  const t = tournaments[tid] || {};
-  if (isStarted(t)) { showToast('Turneringen er startet'); return; }
-  await setSignup(tid, myName, !isSignedUp(t, myName));
-}
-
-// Knappen på turneringskortet. event.stopPropagation() hindrer at kortet
-// åpner turneringen når man bare melder seg på.
-function signupBtn(id, t) {
-  const started = isStarted(t);
-  const on = myName && isSignedUp(t, myName);
-  if (started) {
-    return on
-      ? `<span class="tc-join on" title="Du er med">Med</span>`
-      : `<span class="tc-join" title="Turneringen er startet">Startet</span>`;
-  }
-  return `<button class="tc-join${on?' on':''}" onclick="event.stopPropagation();toggleSignup('${id}')">
-    ${on?'Påmeldt ✓':'Meld meg på'}</button>`;
 }
 
 function copyEventLink() {
@@ -969,27 +933,35 @@ function copyEventLink() {
 function showAddTournament() {
   selectedSport = 'pingpong'; selectedMode = 'wl';
   selectedFormat = 'groups'; selectedScoreDir = 'high';
+  prefillChoice = 'none'; prefillManualSelected = {};
   renderSportGrid();
   renderFormatGrid();
-  renderPrefillList();
+  renderPrefillGroup();
   document.getElementById('t-name').value = '';
   const overlay = document.getElementById('add-tournament-overlay');
   overlay.style.display = 'flex';
+  lockBodyScroll();
 }
 function hideAddTournament() {
   document.getElementById('add-tournament-overlay').style.display = 'none';
+  unlockBodyScroll();
 }
 
 async function addTournament() {
   const name = document.getElementById('t-name').value.trim() ||
     SPORTS.find(s=>s.id===selectedSport)?.label || 'Turnering';
   const id = uuid();
+  let players = [];
+  if (prefillChoice === 'all') {
+    players = Object.values(eventPeople).map(p=>p.name);
+  } else if (prefillChoice === 'manual') {
+    players = Object.values(eventPeople).filter(p=>prefillManualSelected[safeKey(p.name)]).map(p=>p.name);
+  }
   await db.ref('events/'+currentEventId+'/tournaments/'+id).set({
     name, sport: selectedSport,
     mode: selectedFormat==='board' ? 'score' : selectedMode,
     format: selectedFormat, scoreDir: selectedScoreDir,
-    players: [...document.querySelectorAll('#prefill-list input:checked')]
-      .map(b => prefillNames[Number(b.dataset.nameIdx)]).filter(Boolean),
+    players,
     groupA:[], groupB:[], fixturesA:[], fixturesB:[],
     resultsA:{}, resultsB:{}, playoffResults:{}, scores:{}, created: Date.now()
   });
