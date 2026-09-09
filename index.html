@@ -361,7 +361,8 @@ label.signup-row input { width: 18px; height: 18px; flex-shrink: 0; accent-color
       <div class="muted" id="event-desc-display" style="font-size:12px;"></div>
     </div>
     <div class="header-right">
-      <button class="copy-btn" onclick="showJoinDialog()">👋 Meld på</button>
+      <button class="copy-btn" id="people-count-btn" onclick="showPeopleDialog()">👥 0</button>
+      <button class="copy-btn" onclick="showJoinDialog()">+ Legg til</button>
       <button class="copy-btn" onclick="copyEventLink()">Del link</button>
       <div style="display:flex;align-items:center;gap:5px;">
         <div class="sync-dot" id="sync-dot" style="background:#16a34a;"></div>
@@ -400,6 +401,16 @@ label.signup-row input { width: 18px; height: 18px; flex-shrink: 0; accent-color
       <button class="btn-ghost" style="flex:1;" onclick="hideJoinDialog()">Avbryt</button>
       <button class="btn-full" style="flex:2;" id="join-save-btn" onclick="saveJoin()">Lagre</button>
     </div>
+  </div>
+</div>
+
+<!-- PEOPLE LIST MODAL -->
+<div id="people-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:500;align-items:flex-end;justify-content:center;">
+  <div style="background:var(--bg);border-radius:var(--radius-lg) var(--radius-lg) 0 0;width:100%;max-width:540px;max-height:85vh;overflow-y:auto;padding:1.25rem 1.25rem 2.5rem;animation:slideUp 0.22s ease;">
+    <div style="width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 1rem;"></div>
+    <div style="font-size:16px;font-weight:700;margin-bottom:1rem;">Deltakere</div>
+    <div id="people-list"></div>
+    <button class="btn-full mt1" onclick="hidePeopleDialog()">Lukk</button>
   </div>
 </div>
 
@@ -806,6 +817,7 @@ async function loadEvent(eventId, focusTId) {
   peopleRef = db.ref('events/'+eventId+'/people');
   peopleRef.on('value', snap => {
     eventPeople = snap.val() || {};
+    renderPeopleCount();
   });
 
   eventRef = db.ref('events/'+eventId+'/tournaments');
@@ -865,6 +877,36 @@ async function setSignup(tid, name, join) {
   } catch (err) {
     showToast('Kunne ikke lagre påmeldingen — prøv igjen');
   }
+}
+
+function renderPeopleCount() {
+  const btn = document.getElementById('people-count-btn');
+  if (btn) btn.textContent = '👥 ' + Object.keys(eventPeople).length;
+}
+
+function showPeopleDialog() {
+  renderPeopleList();
+  document.getElementById('people-overlay').style.display = 'flex';
+  lockBodyScroll();
+}
+function hidePeopleDialog() { document.getElementById('people-overlay').style.display = 'none'; unlockBodyScroll(); }
+
+function renderPeopleList() {
+  const people = Object.values(eventPeople).sort((a,b)=>(a.joined||0)-(b.joined||0));
+  const wrap = document.getElementById('people-list');
+  if (!people.length) { wrap.innerHTML = '<p class="muted">Ingen deltakere ennå.</p>'; return; }
+  wrap.innerHTML = people.map(p => {
+    const sports = Object.values(tournaments)
+      .filter(t => (t.players||[]).includes(p.name))
+      .map(t => (SPORTS.find(s=>s.id===t.sport)||SPORTS[SPORTS.length-1]).icon);
+    return `<label class="signup-row" style="cursor:default;">
+      <span class="join-icon">🙋</span>
+      <span class="join-info">
+        <span class="join-name-txt">${escapeHTML(p.name)}</span>
+        <span class="join-sub">${sports.length ? sports.join(' ') : 'Ingen turneringer ennå'}</span>
+      </span>
+    </label>`;
+  }).join('');
 }
 
 function showJoinDialog() {
