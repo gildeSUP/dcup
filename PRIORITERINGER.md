@@ -30,6 +30,44 @@ Sjekkliste:
 Merk: en regelendring kan ikke testes fra denne kodebasen, bare i praksis mot
 den ekte basen. Test med en throwaway-event før den ekte brukes.
 
+### 34. 🔴 Sikkerhetsgjennomgang av tjenesten — HØY PRIORITET
+
+Ikke gjort. Gjelder tjenesten som helhet, ikke bare reglene i #5.
+
+**Rammen:** deltakernavn er ikke sensitive opplysninger i seg selv, så dette
+handler ikke om lekkasjepanikk. Poenget er at tjenesten skal være trygg: at
+ingen utenfra kan komme til data de ikke skal ha, og at ingen kan ødelegge et
+event som pågår.
+
+Det som må gjennomgås:
+
+- [ ] **Kan noen hente ut alt med ett kall?** Ligger `.read` på roten i stedet
+      for på `events/$eventId`, kan hvem som helst lese hele basen — alle
+      events, alle navn, alle resultater. Dette er #5, og det er den viktigste
+      enkeltposten i hele lista.
+- [ ] **Kan noen skrive hvor som helst?** Samme spørsmål for `.write`. Uten
+      `.validate` kan en tom base fylles opp med vilkårlig data av hvem som
+      helst som finner databaseadressen (den ligger i `index.html`, som seg
+      hør og bør for en Firebase-webklient — den er ikke en hemmelighet).
+- [ ] **Er event-ID-en den eneste sperren, og holder den?** `uuid()` bruker
+      `Math.random()`, ikke `crypto.getRandomValues()`. For en firmafest er
+      det greit, men det bør være et bevisst valg, ikke en forglemmelse —
+      og det er et par linjer å bytte.
+- [ ] **Lekker vi event-ID-en videre?** Siden laster Firebase-SDK-en fra
+      `cdn.jsdelivr.net`, og `Referer` på den forespørselen inneholder hele
+      URL-en inkludert `?e=<id>`. `<meta name="referrer" content="no-referrer">`
+      lukker det med én linje.
+- [ ] **Er XSS-en fortsatt lukket?** P0 #1 fjernet navn fra `onclick`-strenger.
+      Alt som er skrevet siden bruker `escapeHTML`, `textContent` eller
+      `data-`-attributter, men det er verdt en gjennomgang av alle `innerHTML`
+      med brukerdata i seg — særlig de nyeste (`tieNoteHTML`, sluttspillkortene).
+- [ ] **Kan et event slettes eller ødelegges?** Det finnes ingen sletting
+      (#10) og ingen roller (#26). Alle med linken kan nullstille alt. Riktig
+      for en firmafest, men det bør være et valg vi har tatt, ikke noe vi
+      oppdager under eventet.
+- [ ] **Hva ligger igjen etterpå?** Ingen sletting, ingen utløpstid. Basen
+      vokser med hvert event og alt blir stående for alltid.
+
 ---
 
 ## P1 — reelle hull
