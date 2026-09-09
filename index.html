@@ -446,10 +446,17 @@ label.signup-row input { width: 18px; height: 18px; flex-shrink: 0; accent-color
       <label>Vinner</label>
       <div class="mode-grid" id="scoredir-grid"></div>
     </div>
-    <div class="form-group" id="prefill-group" style="display:none;">
+    <div class="form-group" id="prefill-group">
       <label>Deltakere</label>
-      <div class="mode-grid" id="prefill-choice-grid"></div>
-      <div id="prefill-list" style="margin-top:0.75rem;"></div>
+      <div class="input-row">
+        <input type="text" id="new-participant-input" placeholder="Ny deltaker…" maxlength="40" />
+        <button class="btn btn-primary" onclick="addNewParticipant()">Legg til</button>
+      </div>
+      <div class="player-tags" id="new-participant-tags"></div>
+      <div id="prefill-choice-wrap" style="display:none;">
+        <div class="mode-grid" id="prefill-choice-grid"></div>
+        <div id="prefill-list" style="margin-top:0.75rem;"></div>
+      </div>
     </div>
     <div style="display:flex;gap:8px;margin-top:0.5rem;">
       <button class="btn-ghost" style="flex:1;" onclick="hideAddTournament()">Avbryt</button>
@@ -665,18 +672,23 @@ const PREFILL_CHOICES = {
 };
 let prefillChoice = 'none';
 let prefillManualSelected = {};
+// Nye navn lagt til her og nå, mens turneringen opprettes — lagres først
+// (som deltakere og som spillere på turneringen) når "Opprett" trykkes.
+let newParticipants = [];
 
 function renderPrefillGroup() {
-  const group = document.getElementById('prefill-group');
   const people = Object.values(eventPeople).sort((a,b)=>(a.joined||0)-(b.joined||0));
-  group.style.display = people.length ? 'block' : 'none';
-  if (!people.length) return;
-  document.getElementById('prefill-choice-grid').innerHTML = Object.keys(PREFILL_CHOICES).map(c => `
-    <button type="button" class="mode-btn ${c===prefillChoice?'selected':''}" onclick="selectPrefillChoice('${c}')">
-      <span class="mode-btn-icon">${PREFILL_CHOICES[c].icon}</span>
-      <span class="mode-btn-label">${PREFILL_CHOICES[c].label}</span>
-    </button>`).join('');
-  renderPrefillList(people);
+  const choiceWrap = document.getElementById('prefill-choice-wrap');
+  choiceWrap.style.display = people.length ? 'block' : 'none';
+  if (people.length) {
+    document.getElementById('prefill-choice-grid').innerHTML = Object.keys(PREFILL_CHOICES).map(c => `
+      <button type="button" class="mode-btn ${c===prefillChoice?'selected':''}" onclick="selectPrefillChoice('${c}')">
+        <span class="mode-btn-icon">${PREFILL_CHOICES[c].icon}</span>
+        <span class="mode-btn-label">${PREFILL_CHOICES[c].label}</span>
+      </button>`).join('');
+    renderPrefillList(people);
+  }
+  renderNewParticipantTags();
 }
 
 function selectPrefillChoice(c) {
@@ -701,6 +713,34 @@ function togglePrefillManual(key) {
   if (prefillManualSelected[key]) delete prefillManualSelected[key];
   else prefillManualSelected[key] = true;
   renderPrefillList(Object.values(eventPeople).sort((a,b)=>(a.joined||0)-(b.joined||0)));
+}
+
+// Legger til en helt ny deltaker mens man oppretter turneringen — de er
+// alltid med på denne turneringen, uansett alle/ingen/manuelt-valget over,
+// siden det å skrive navnet her er en eksplisitt "legg til"-handling.
+function addNewParticipant() {
+  const input = document.getElementById('new-participant-input');
+  const name = input.value.trim();
+  if (!name) return;
+  const exists = newParticipants.includes(name) || Object.values(eventPeople).some(p=>p.name===name);
+  if (exists) { showToast('Allerede lagt til'); return; }
+  newParticipants.push(name);
+  input.value = '';
+  renderNewParticipantTags();
+}
+document.getElementById('new-participant-input')?.addEventListener('keydown', e=>{
+  if (e.key==='Enter') { e.preventDefault(); addNewParticipant(); }
+});
+
+function removeNewParticipant(i) {
+  newParticipants.splice(i,1);
+  renderNewParticipantTags();
+}
+
+function renderNewParticipantTags() {
+  document.getElementById('new-participant-tags').innerHTML = newParticipants.map((name,i) =>
+    `<div class="player-tag">${escapeHTML(name)}<button onclick="removeNewParticipant(${i})">×</button></div>`
+  ).join('');
 }
 
 function renderFormatGrid() {
@@ -1007,11 +1047,12 @@ function copyEventLink() {
 function showAddTournament() {
   selectedSport = 'pingpong'; selectedMode = 'wl';
   selectedFormat = 'groups'; selectedScoreDir = 'high';
-  prefillChoice = 'none'; prefillManualSelected = {};
+  prefillChoice = 'none'; prefillManualSelected = {}; newParticipants = [];
   renderSportGrid();
   renderFormatGrid();
   renderPrefillGroup();
   document.getElementById('t-name').value = '';
+  document.getElementById('new-participant-input').value = '';
   const overlay = document.getElementById('add-tournament-overlay');
   overlay.style.display = 'flex';
   lockBodyScroll();
@@ -1031,14 +1072,21 @@ async function addTournament() {
   } else if (prefillChoice === 'manual') {
     players = Object.values(eventPeople).filter(p=>prefillManualSelected[safeKey(p.name)]).map(p=>p.name);
   }
-  await db.ref('events/'+currentEventId+'/tournaments/'+id).set({
+  newParticipants.forEach(n => { if (!players.includes(n)) players.push(n); });
+
+  const updates = {};
+  updates['events/'+currentEventId+'/tournaments/'+id] = {
     name, sport: selectedSport,
     mode: selectedFormat==='board' ? 'score' : selectedMode,
     format: selectedFormat, scoreDir: selectedScoreDir,
     players,
     groupA:[], groupB:[], fixturesA:[], fixturesB:[],
     resultsA:{}, resultsB:{}, playoffResults:{}, scores:{}, created: Date.now()
+  };
+  newParticipants.forEach(n => {
+    updates['events/'+currentEventId+'/people/'+safeKey(n)] = { name: n, joined: Date.now() };
   });
+  await db.ref().update(updates);
   hideAddTournament();
   openTournament(id);
 }
