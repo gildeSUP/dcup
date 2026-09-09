@@ -341,8 +341,10 @@ async function setSignup(tid, name, join) {
   try {
     await ref.transaction(list => {
       const arr = Array.isArray(list) ? list : [];
-      if (join) return arr.includes(name) ? arr : [...arr, name];
-      return arr.filter(p => p !== name);
+      // undefined avbryter transaksjonen: ingen skriving når ingenting endres,
+      // slik at den kan kalles for alle turneringer uten å røre dem alle
+      if (join) return arr.includes(name) ? undefined : [...arr, name];
+      return arr.includes(name) ? arr.filter(p => p !== name) : undefined;
     });
   } catch (err) {
     showToast('Kunne ikke lagre påmeldingen — prøv igjen');
@@ -388,16 +390,14 @@ async function removePerson(key) {
   const p = eventPeople[key];
   if (!p) return;
   if (!confirm(`Fjerne ${p.name}? De fjernes også fra turneringene de er med i.`)) return;
-  const updates = {};
-  updates['events/'+currentEventId+'/people/'+key] = null;
-  Object.entries(tournaments).forEach(([tid, t]) => {
-    const current = t.players || [];
-    if (current.includes(p.name)) {
-      updates['events/'+currentEventId+'/tournaments/'+tid+'/players'] = current.filter(n => n !== p.name);
-    }
-  });
   try {
-    await db.ref().update(updates);
+    // Én transaksjon per turnering. Tidligere ble players-listene regnet ut fra
+    // den lokale kopien og skrevet blindt, så en påmelding som landet i samme
+    // øyeblikk forsvant.
+    for (const tid of Object.keys(tournaments)) {
+      await setSignup(tid, p.name, false);
+    }
+    await db.ref('events/'+currentEventId+'/people/'+key).set(null);
     showToast('Deltaker fjernet');
     renderPeopleList();
   } catch (err) {
@@ -410,6 +410,15 @@ async function removePerson(key) {
 // via fkey) og poengtavle-scorer (som har navnet som Firebase-nøkkel). En
 // omdøping berører altså mange sammenhengende felt på én gang, så den går
 // via en transaksjon på hele turneringsdokumentet i stedet for enkeltfelt.
+// Alle stedene et navn kan forekomme i en turnering.
+function tournamentHasName(t, name) {
+  if ((t.players||[]).includes(name)) return true;
+  if ((t.groupA||[]).includes(name) || (t.groupB||[]).includes(name)) return true;
+  const inResults = r => Object.values(r||{}).some(x => x.home===name || x.away===name);
+  if (inResults(t.resultsA) || inResults(t.resultsB)) return true;
+  return Object.values(t.scores||{}).some(sc => sc.name===name);
+}
+
 function renameInTournament(t, oldName, newName) {
   const swap = n => n === oldName ? newName : n;
   const swapFixtures = arr => Array.isArray(arr) ? arr.map(f => [swap(f[0]), swap(f[1])]) : arr;
@@ -464,18 +473,23 @@ async function renamePerson(oldKey) {
   peopleUpdates['events/'+currentEventId+'/people/'+oldKey] = null;
   peopleUpdates['events/'+currentEventId+'/people/'+newKey] = { name: newName, joined: p.joined || Date.now() };
 
+  // Navnet kan ligge i gruppe, kampoppsett, resultatnøkler og scorer selv om
+  // det er fjernet fra players — da må turneringen likevel med.
   const affectedTids = Object.entries(tournaments)
-    .filter(([, t]) => (t.players||[]).includes(p.name))
+    .filter(([, t]) => tournamentHasName(t, p.name))
     .map(([tid]) => tid);
 
   try {
-    await db.ref().update(peopleUpdates);
+    // Turneringene først, deltakerlista sist. Feiler noe underveis, står lista
+    // igjen med det gamle navnet — og da finner et nytt forsøk den fortsatt.
+    // Motsatt rekkefølge gjorde en halvveis omdøping umulig å rette opp.
     for (const tid of affectedTids) {
       await db.ref('events/'+currentEventId+'/tournaments/'+tid).transaction(current => {
         if (!current) return current;
         return renameInTournament(current, p.name, newName);
       });
     }
+    await db.ref().update(peopleUpdates);
     showToast('Navn oppdatert');
     renderPeopleList();
   } catch (err) {
@@ -531,8 +545,10 @@ async function saveJoin() {
   btn.disabled = true; btn.textContent = 'Lagrer…';
 
   try {
+    // joined settes bare første gang: den er sorteringsnøkkel for
+    // deltakerlista, og en som legges til igjen skal ikke hoppe til bunnen.
     await db.ref('events/'+currentEventId+'/people/'+safeKey(name))
-      .update({ name, joined: Date.now() });
+      .transaction(cur => cur && cur.joined ? { ...cur, name } : { name, joined: Date.now() });
     for (const box of document.querySelectorAll('#join-list input[type=checkbox]')) {
       if (box.disabled || !box.checked) continue;
       // Sjekkes på nytt her: turneringen kan ha blitt startet mens dialogen sto åpen
@@ -704,10 +720,18 @@ function removeTPlayer(i) {
   if (name !== undefined) setSignup(currentTId, name, false);
 }
 
+// Fjerner bare navnene som faktisk sto i lista da du trykket, så en påmelding
+// som lander i samme øyeblikk ikke blir slettet med.
 function clearTPlayers() {
+  const known = [...(tState.players||[])];
   tState.players = [];
   renderTPlayers();
-  tWrite({ players: [] });
+  if (!tRef || !known.length) return;
+  tRef.child('players').transaction(list => {
+    const arr = Array.isArray(list) ? list : [];
+    const next = arr.filter(n => !known.includes(n));
+    return next.length === arr.length ? undefined : next;
+  }).catch(() => { setSyncStatus('offline'); showToast('Kunne ikke lagre — prøv igjen'); });
 }
 
 function renderTPlayers() {
@@ -768,15 +792,16 @@ function computeGroups(players) {
 // Ellers kunne en spiller meldt på i samme øyeblikk som noen trykker
 // "Generer grupper" bli overskrevet/utelatt av et set() av hele objektet
 // basert på en tState uten den ferske påmeldingen.
-let generateNotEnough = false;
 async function generateTournament() {
   if (!tRef) return;
-  generateNotEnough = false;
+  // Lokal, ikke delt: to overlappende kall nullstilte hverandres flagg, og
+  // «Legg til minst 4 spillere» kunne forsvinne.
+  let notEnough = false;
   try {
     await tRef.transaction(current => {
       if (!current) return current;
       const players = current.players || [];
-      if (players.length < 4) { generateNotEnough = true; return; }
+      if (players.length < 4) { notEnough = true; return; }
       const { groupA, groupB, fixturesA, fixturesB } = computeGroups(players);
       return { ...current, groupA, groupB, fixturesA, fixturesB, resultsA: {}, resultsB: {}, playoffResults: {} };
     });
@@ -784,7 +809,7 @@ async function generateTournament() {
     showToast('Kunne ikke generere — prøv igjen');
     return;
   }
-  if (generateNotEnough) showToast('Legg til minst 4 spillere');
+  if (notEnough) showToast('Legg til minst 4 spillere');
 }
 
 function resetTournament() {
