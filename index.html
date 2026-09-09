@@ -279,6 +279,13 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 .mb1 { margin-bottom: 1rem; }
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 @media (max-width: 540px) { .two-col { grid-template-columns: 1fr; } }
+.board-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 0.5px solid var(--border); }
+.board-row:last-of-type { border-bottom: none; }
+.board-name { flex: 1; font-weight: 600; font-size: 15px; }
+.board-row.unscored .board-name { color: var(--text3); font-weight: 500; }
+.board-score { width: 78px; padding: 8px 6px; text-align: center; font-weight: 700; font-size: 16px; }
+.board-del { background: none; border: none; color: var(--text3); font-size: 17px; line-height: 1; padding: 0 2px; cursor: pointer; }
+.board-del:hover { color: var(--red); }
 .input-row { display: flex; gap: 8px; margin-bottom: 0.5rem; }
 .input-row input { flex: 1; }
 .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
@@ -376,9 +383,17 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
       <label>Idrett</label>
       <div class="sport-grid" id="sport-grid"></div>
     </div>
+    <div class="form-group">
+      <label>Oppsett</label>
+      <div class="mode-grid" id="format-grid"></div>
+    </div>
     <div class="form-group" id="mode-group">
       <label>Resultatsystem</label>
       <div class="mode-grid" id="mode-grid"></div>
+    </div>
+    <div class="form-group" id="scoredir-group" style="display:none;">
+      <label>Vinner</label>
+      <div class="mode-grid" id="scoredir-grid"></div>
     </div>
     <div style="display:flex;gap:8px;margin-top:0.5rem;">
       <button class="btn-ghost" style="flex:1;" onclick="hideAddTournament()">Avbryt</button>
@@ -421,6 +436,26 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
           <button class="btn btn-primary" onclick="generateTournament()">Generer grupper</button>
           <button class="btn" onclick="clearTPlayers()">Tøm</button>
         </div>
+      </div>
+    </div>
+
+    <!-- POENGTAVLE -->
+    <div id="t-board" style="display:none;">
+      <div class="card mb1">
+        <div style="font-size:15px;font-weight:700;margin-bottom:0.75rem;">Legg til spiller</div>
+        <div class="input-row">
+          <input type="text" id="t-board-input" placeholder="Navn…" maxlength="40" />
+          <button class="btn btn-primary" onclick="addBoardPlayer()">Legg til</button>
+        </div>
+        <div class="form-error" id="t-board-error"></div>
+      </div>
+      <div class="card">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:0.75rem;">
+          <div style="font-size:15px;font-weight:700;">Poengtavle</div>
+          <span class="muted" id="t-board-hint"></span>
+        </div>
+        <div id="t-board-list"></div>
+        <button class="btn btn-danger btn-sm mt1" onclick="resetBoard()">Nullstill scorer</button>
       </div>
     </div>
 
@@ -534,8 +569,18 @@ const MODES = {
   score: { label:'Score', icon:'🔢', hint:'Skriv inn score · Seier=3p · Tap=0p · Rangert på mål+/-' },
 };
 
+const FORMATS = {
+  groups: { label:'Grupper', icon:'🅰️', hint:'Gruppespill med playoff på tvers' },
+  board:  { label:'Poengtavle', icon:'📋', hint:'Én score per spiller · ingen kamper' },
+};
+const SCORE_DIRS = {
+  high: { label:'Høyest vinner', icon:'⬆️' },
+  low:  { label:'Lavest vinner', icon:'⬇️' },
+};
 let selectedSport = 'pingpong';
 let selectedMode = 'wl';
+let selectedFormat = 'groups';
+let selectedScoreDir = 'high';
 
 function renderSportGrid() {
   document.getElementById('sport-grid').innerHTML = SPORTS.map(s => `
@@ -553,6 +598,31 @@ function selectSport(id) {
   renderSportGrid();
 }
 
+function renderFormatGrid() {
+  document.getElementById('format-grid').innerHTML = Object.keys(FORMATS).map(f => `
+    <button class="mode-btn ${f===selectedFormat?'selected':''}" onclick="selectFormat('${f}')">
+      <span class="mode-btn-icon">${FORMATS[f].icon}</span>
+      <span class="mode-btn-label">${FORMATS[f].label}</span>
+    </button>`).join('');
+  // Poengtavla har ingen kamper, så resultatsystem er ikke relevant der
+  document.getElementById('mode-group').style.display = selectedFormat==='board' ? 'none' : 'block';
+  renderScoreDirGrid();
+}
+function selectFormat(f) { selectedFormat = f; renderFormatGrid(); }
+
+function renderScoreDirGrid() {
+  // Retningen betyr noe når det finnes en score å rangere på
+  const relevant = selectedFormat==='board' || selectedMode==='score';
+  document.getElementById('scoredir-group').style.display = relevant ? 'block' : 'none';
+  if (!relevant) return;
+  document.getElementById('scoredir-grid').innerHTML = Object.keys(SCORE_DIRS).map(d => `
+    <button class="mode-btn ${d===selectedScoreDir?'selected':''}" onclick="selectScoreDir('${d}')">
+      <span class="mode-btn-icon">${SCORE_DIRS[d].icon}</span>
+      <span class="mode-btn-label">${SCORE_DIRS[d].label}</span>
+    </button>`).join('');
+}
+function selectScoreDir(d) { selectedScoreDir = d; renderScoreDirGrid(); }
+
 function renderModeGrid() {
   const sport = SPORTS.find(s=>s.id===selectedSport);
   document.getElementById('mode-grid').innerHTML = sport.modes.map(m => `
@@ -562,7 +632,7 @@ function renderModeGrid() {
     </button>`).join('');
 }
 
-function selectMode(m) { selectedMode = m; renderModeGrid(); }
+function selectMode(m) { selectedMode = m; renderModeGrid(); renderScoreDirGrid(); }
 
 // ===== NAVIGATION =====
 function showScreen(id) {
@@ -690,7 +760,9 @@ function copyEventLink() {
 // ===== ADD TOURNAMENT =====
 function showAddTournament() {
   selectedSport = 'pingpong'; selectedMode = 'wl';
+  selectedFormat = 'groups'; selectedScoreDir = 'high';
   renderSportGrid();
+  renderFormatGrid();
   document.getElementById('t-name').value = '';
   const overlay = document.getElementById('add-tournament-overlay');
   overlay.style.display = 'flex';
@@ -704,9 +776,11 @@ async function addTournament() {
     SPORTS.find(s=>s.id===selectedSport)?.label || 'Turnering';
   const id = uuid();
   await db.ref('events/'+currentEventId+'/tournaments/'+id).set({
-    name, sport: selectedSport, mode: selectedMode,
+    name, sport: selectedSport,
+    mode: selectedFormat==='board' ? 'score' : selectedMode,
+    format: selectedFormat, scoreDir: selectedScoreDir,
     players:[], groupA:[], groupB:[], fixturesA:[], fixturesB:[],
-    resultsA:{}, resultsB:{}, playoffResults:{}, created: Date.now()
+    resultsA:{}, resultsB:{}, playoffResults:{}, scores:{}, created: Date.now()
   });
   hideAddTournament();
   openTournament(id);
@@ -724,6 +798,7 @@ function openTournament(id) {
   document.getElementById('t-view-name').textContent = tState.name || '';
   document.getElementById('t-view-sport').textContent = sport.icon + ' ' + sport.label;
   document.getElementById('t-scoring-hint').textContent = MODES[tState.mode]?.hint || '';
+  document.getElementById('t-board-input')?.setAttribute('value','');
 
   // Update URL
   const url = new URL(window.location.href);
@@ -744,7 +819,7 @@ function openTournament(id) {
 
   setSyncStatus('connecting');
   showScreen('screen-tournament');
-  switchTTab('groups');
+  if (!isBoard(tState)) switchTTab('groups');
 }
 
 function backToEvent() {
@@ -879,6 +954,97 @@ function resetTournament() {
 function safeKey(s){ return String(s).replace(/[.#$/[\]]/g, c => '~'+c.charCodeAt(0).toString(16)); }
 function fkey(f){return safeKey(f[0])+'|||'+safeKey(f[1]);}
 
+// ===== POENGTAVLE =====
+function isBoard(t) { return (t.format||'groups')==='board'; }
+function scoreDirOf(t) { return t.scoreDir==='low' ? 'low' : 'high'; }
+
+// Rangert tavle. Spillere uten score havner nederst, uansett retning.
+function boardStandings(t) {
+  const scores = t.scores||{};
+  const dir = scoreDirOf(t);
+  const rows = (t.players||[]).map(name=>{
+    const e = scores[safeKey(name)];
+    return { name, score: e && typeof e.score==='number' ? e.score : null, ts: e?e.ts:0 };
+  });
+  rows.sort((a,b)=>{
+    if (a.score===null && b.score===null) return 0;
+    if (a.score===null) return 1;
+    if (b.score===null) return -1;
+    if (a.score!==b.score) return dir==='low' ? a.score-b.score : b.score-a.score;
+    return (a.ts||0)-(b.ts||0); // lik score: den som leverte først står øverst
+  });
+  let pos=0, prev=null;
+  return rows.map((r,i)=>{
+    if (r.score!==null && r.score!==prev) { pos=i+1; prev=r.score; }
+    return { ...r, pos: r.score===null ? null : pos };
+  });
+}
+
+function renderBoard() {
+  const rows = boardStandings(tState);
+  const scored = rows.filter(r=>r.score!==null).length;
+  document.getElementById('t-board-hint').textContent =
+    `${scored} av ${rows.length} har score · ${SCORE_DIRS[scoreDirOf(tState)].label.toLowerCase()}`;
+  document.getElementById('t-board-list').innerHTML = rows.length
+    ? rows.map(r=>{
+        const pc = r.pos===1?'p1':r.pos===2?'p2':r.pos===3?'p3':'px';
+        // Indeks i players-lista, ikke navnet: da slipper navnet aldri inn i en onclick-streng
+        const pi = (tState.players||[]).indexOf(r.name);
+        return `<div class="board-row${r.score===null?' unscored':''}">
+          <span class="pos ${pc}">${r.pos||'–'}</span>
+          <span class="board-name">${escapeHTML(r.name)}</span>
+          <input class="board-score" type="text" inputmode="numeric" pattern="[0-9-]*"
+            value="${r.score===null?'':r.score}" placeholder="—"
+            onchange="saveBoardScore(${pi}, this.value)" />
+          <button class="board-del" title="Fjern spiller"
+            onclick="removeBoardPlayer(${pi})">×</button>
+        </div>`;
+      }).join('')
+    : '<p class="muted">Ingen spillere ennå.</p>';
+}
+
+function addBoardPlayer() {
+  const input = document.getElementById('t-board-input');
+  const name = input.value.trim();
+  const errEl = document.getElementById('t-board-error');
+  if (!name) return;
+  if ((tState.players||[]).includes(name)) { errEl.textContent='Navn allerede lagt til'; errEl.style.display='block'; return; }
+  errEl.style.display='none';
+  tState.players = [...(tState.players||[]), name];
+  input.value='';
+  tPush(); renderBoard();
+}
+
+function removeBoardPlayer(pi) {
+  const name = (tState.players||[])[pi];
+  if (name===undefined) return;
+  if (!confirm(`Fjerne ${name} fra poengtavla?`)) return;
+  tState.players = (tState.players||[]).filter((_,i)=>i!==pi);
+  if (tState.scores) delete tState.scores[safeKey(name)];
+  tPush(); renderBoard();
+}
+
+function saveBoardScore(pi, raw) {
+  const name = (tState.players||[])[pi];
+  if (name===undefined) return;
+  if (!tState.scores) tState.scores = {};
+  const key = safeKey(name);
+  const txt = String(raw).trim();
+  if (txt==='') { delete tState.scores[key]; }
+  else {
+    const n = parseInt(txt, 10);
+    if (isNaN(n)) { renderBoard(); return; }
+    tState.scores[key] = { name, score: n, ts: Date.now() };
+  }
+  tPush(); renderBoard();
+}
+
+function resetBoard() {
+  if (!confirm('Nullstille alle scorer? Spillerne beholdes.')) return;
+  tState.scores = {};
+  tPush(); renderBoard();
+}
+
 // Kampene i den rekkefølgen de faktisk spilles: A1, B1, A2, B2 ... Gruppene går parallelt.
 function playOrder(t) {
   const fa=t.fixturesA||[], fb=t.fixturesB||[], order=[];
@@ -902,8 +1068,9 @@ function lastPlayed(t) {
 }
 function nextUp(t) { return playOrder(t).find(m=>!isPlayed(t,m)) || null; }
 
-function calcStandings(group, results, mode) {
+function calcStandings(group, results, mode, dir) {
   mode = mode || tState.mode;
+  dir = dir || scoreDirOf(tState);
   const s={};
   group.forEach(p=>{s[p]={p:0,w:0,d:0,l:0,pts:0,gf:0,ga:0,gd:0};});
   Object.values(results).forEach(r=>{
@@ -932,7 +1099,10 @@ function calcStandings(group, results, mode) {
     const sa=s[a],sb=s[b];
     if(sb.pts!==sa.pts) return sb.pts-sa.pts;
     if(sb.w!==sa.w) return sb.w-sa.w;
-    if(mode==='score') { if(sb.gd!==sa.gd) return sb.gd-sa.gd; if(sb.gf!==sa.gf) return sb.gf-sa.gf; }
+    if(mode==='score') {
+      if(dir==='low') { if(sa.gf!==sb.gf) return sa.gf-sb.gf; }
+      else { if(sb.gd!==sa.gd) return sb.gd-sa.gd; if(sb.gf!==sa.gf) return sb.gf-sa.gf; }
+    }
     const h=h2h(b,a)-h2h(a,b); if(h) return h;
     if(sa.l!==sb.l) return sa.l-sb.l;
     return Math.random()-0.5;
@@ -941,6 +1111,14 @@ function calcStandings(group, results, mode) {
 
 // ===== RENDER TOURNAMENT =====
 function renderTournamentView() {
+  if (isBoard(tState)) {
+    document.getElementById('t-setup').style.display = 'none';
+    document.getElementById('t-main').style.display = 'none';
+    document.getElementById('t-board').style.display = 'block';
+    renderBoard();
+    return;
+  }
+  document.getElementById('t-board').style.display = 'none';
   const has = (tState.groupA||[]).length > 0;
   document.getElementById('t-setup').style.display = has?'none':'block';
   document.getElementById('t-main').style.display = has?'block':'none';
@@ -1128,7 +1306,8 @@ function showMatchDialog(p1, p2, mode, onResult, r, scoreH, scoreA, hasScore) {
   const container = document.getElementById('match-dialog-container');
 
   function render() {
-    const hwin = hs&&sh>sa, awin = hs&&sa>sh;
+    const low = scoreDirOf(tState)==='low';
+    const hwin = hs&&(low?sh<sa:sh>sa), awin = hs&&(low?sa<sh:sa>sh);
     let body = '';
     if (mode==='score') {
       body = `<div class="score-grid">
@@ -1212,7 +1391,9 @@ function showMatchDialog(p1, p2, mode, onResult, r, scoreH, scoreA, hasScore) {
   window.saveScore = function() {
     const hEl=document.getElementById('si-h'), aEl=document.getElementById('si-a');
     const h=Math.max(0,parseInt(hEl?.value)||0), a=Math.max(0,parseInt(aEl?.value)||0);
-    const winner=h>a?'a':a>h?'b':'draw', loser=h>a?p2:a>h?p1:null;
+    const hBest = scoreDirOf(tState)==='low' ? h<a : h>a;
+    const aBest = scoreDirOf(tState)==='low' ? a<h : a>h;
+    const winner=hBest?'a':aBest?'b':'draw', loser=hBest?p2:aBest?p1:null;
     onResult(winner, loser, h, a);
     closeDlg();
   };
@@ -1298,14 +1479,60 @@ function renderDisplay() {
     `<div class="display-dot ${i===dispCurrent?'active':''}"></div>`
   ).join('');
 
+  const board = isBoard(t);
   document.getElementById('disp-content').innerHTML = `
     <div class="display-main">
       <div class="display-col">
-        <div class="display-section-title">Tabell</div>
-        ${renderDisplayTables(t)}
+        <div class="display-section-title">${board?'Poengtavle':'Tabell'}</div>
+        ${board?renderDisplayBoard(t):renderDisplayTables(t)}
       </div>
-      <div class="display-col">${renderDisplaySide(t)}</div>
+      <div class="display-col">${board?renderDisplayBoardSide(t):renderDisplaySide(t)}</div>
     </div>`;
+}
+
+function renderDisplayBoard(t) {
+  const rows = boardStandings(t);
+  if (!rows.length) return '<div style="opacity:0.3;font-size:18px;">Ingen spillere ennå</div>';
+  return `<table class="display-table">
+    <thead><tr><th style="width:30px;">#</th><th class="name">Spiller</th><th>Score</th></tr></thead>
+    <tbody>${rows.map(r=>{
+      const pc=r.pos===1?'p1':r.pos===2?'p2':r.pos===3?'p3':'px';
+      return `<tr>
+        <td><span class="display-pos ${pc}">${r.pos||'–'}</span></td>
+        <td class="name">${escapeHTML(r.name)}</td>
+        <td style="font-weight:700;">${r.score===null?'—':r.score}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>`;
+}
+
+function renderDisplayBoardSide(t) {
+  const rows = boardStandings(t);
+  const scored = rows.filter(r=>r.score!==null);
+  const missing = rows.filter(r=>r.score===null);
+  const last = scored.slice().sort((a,b)=>(b.ts||0)-(a.ts||0))[0];
+
+  const lastCard = `<div class="display-card">
+    <div class="display-card-label">Siste registrering</div>
+    ${last
+      ? `<div class="display-result-line">${escapeHTML(last.name)}<span class="display-score">${last.score}</span></div>
+         <div class="display-card-sub">${scored.length} av ${rows.length} har levert</div>`
+      : `<div class="display-result-line" style="opacity:0.3;">—</div>
+         <div class="display-card-sub">Ingen scorer ennå</div>`}
+  </div>`;
+
+  const doneCard = `<div class="display-card next">
+    <div class="display-card-label">${missing.length?'Mangler score':'Ferdig'}</div>
+    ${missing.length
+      ? missing.slice(0,DISP_QUEUE_MAX).map(r=>
+          `<div class="display-queue-item"><span class="display-queue-teams">${escapeHTML(r.name)}</span></div>`).join('')
+        + (missing.length>DISP_QUEUE_MAX
+            ? `<div class="display-card-sub">+ ${missing.length-DISP_QUEUE_MAX} flere</div>` : '')
+      : `<div class="display-result-line">🏆 ${escapeHTML((rows[0]||{}).name||'—')}</div>
+         <div class="display-card-sub">${SCORE_DIRS[scoreDirOf(t)].label} · score ${(rows[0]||{}).score ?? '—'}</div>`}
+  </div>`;
+
+  return lastCard + doneCard;
 }
 
 function renderDisplayTables(t) {
@@ -1316,7 +1543,7 @@ function renderDisplayTables(t) {
       const group=grp==='a'?t.groupA:t.groupB;
       const results=grp==='a'?t.resultsA:t.resultsB;
       if(!(group||[]).length) return '';
-      const rows=calcStandings(group||[], results||{}, t.mode);
+      const rows=calcStandings(group||[], results||{}, t.mode, scoreDirOf(t));
       return `<div>
         <div class="display-group-title">Gruppe ${grp.toUpperCase()}</div>
         <table class="display-table">
