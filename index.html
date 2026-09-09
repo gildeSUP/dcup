@@ -1141,14 +1141,18 @@ function backToEvent() {
   showScreen('screen-event');
 }
 
-function tPush() {
+// Skriver KUN de feltene som faktisk endrer seg (via tRef.update()) — aldri
+// hele tState med ett set(). Et set() av hele objektet kan overskrive noe
+// en annen bruker nettopp lagret et annet sted i turneringen (en annen
+// kamp, en annen sin score, spillerlista) hvis den lokale kopien er
+// akkurat bakpå — se generateTournament() for samme problem løst med
+// transaction() der skrivingen faktisk avhenger av gjeldende innhold.
+function tWrite(patch) {
   if (!tRef) return;
-  try {
-    tRef.set(tState).catch(()=>setSyncStatus('offline'));
-  } catch (err) {
+  tRef.update(patch).catch(() => {
     setSyncStatus('offline');
     showToast('Kunne ikke lagre — prøv igjen');
-  }
+  });
 }
 
 function setSyncStatus(s) {
@@ -1171,6 +1175,10 @@ function switchTTab(name) {
 }
 
 // ===== PLAYERS =====
+// addTPlayer/removeTPlayer bruker setSignup() (samme transaksjonsbaserte
+// skriving som "Meld på") i stedet for å sette() hele tState — ellers kunne
+// noen som meldte seg på akkurat da bli overskrevet av en lokalt utdatert kopi.
+// Lokal tState oppdateres først for umiddelbar tilbakemelding i UI-et.
 function addTPlayer() {
   const input = document.getElementById('t-player-input');
   const name = input.value.trim();
@@ -1180,20 +1188,21 @@ function addTPlayer() {
   errEl.style.display='none';
   tState.players = [...(tState.players||[]), name];
   input.value = '';
-  tPush();
   renderTPlayers();
+  setSignup(currentTId, name, true);
 }
 
 function removeTPlayer(i) {
+  const name = tState.players[i];
   tState.players.splice(i,1);
-  tPush();
   renderTPlayers();
+  if (name !== undefined) setSignup(currentTId, name, false);
 }
 
 function clearTPlayers() {
   tState.players = [];
-  tPush();
   renderTPlayers();
+  tWrite({ players: [] });
 }
 
 function renderTPlayers() {
@@ -1249,11 +1258,11 @@ function computeGroups(players) {
   return { groupA, groupB, fixturesA: roundRobin(groupA), fixturesB: roundRobin(groupB) };
 }
 
-// Bruker en transaksjon i stedet for tPush(): den leser turneringen som den
-// faktisk står på serveren akkurat da, ikke den lokale (potensielt utdaterte)
-// tState. Ellers kunne en spiller meldt på i samme øyeblikk som noen trykker
-// "Generer grupper" bli overskrevet/utelatt av et tPush() som skrev hele
-// objektet basert på en tState uten den ferske påmeldingen.
+// Bruker en transaksjon: den leser turneringen som den faktisk står på
+// serveren akkurat da, ikke den lokale (potensielt utdaterte) tState.
+// Ellers kunne en spiller meldt på i samme øyeblikk som noen trykker
+// "Generer grupper" bli overskrevet/utelatt av et set() av hele objektet
+// basert på en tState uten den ferske påmeldingen.
 let generateNotEnough = false;
 async function generateTournament() {
   if (!tRef) return;
@@ -1278,7 +1287,7 @@ function resetTournament() {
   tState.groupA=[]; tState.groupB=[];
   tState.fixturesA=[]; tState.fixturesB=[];
   tState.resultsA={}; tState.resultsB={}; tState.playoffResults={};
-  tPush();
+  tWrite({ groupA:[], groupB:[], fixturesA:[], fixturesB:[], resultsA:{}, resultsB:{}, playoffResults:{} });
 }
 
 // ===== STANDINGS =====
@@ -1335,6 +1344,10 @@ function renderBoard() {
     : '<p class="muted">Ingen spillere ennå.</p>';
 }
 
+// Poengtavla er nettopp der flere folk skriver inn sin egen score samtidig
+// — akkurat scenarioet som må tåle samtidighet. saveBoardScore/removeBoard-
+// Player skriver derfor bare til sin egen nøkkel under scores/, aldri hele
+// tState, så to samtidige innsendinger aldri kan overskrive hverandre.
 function addBoardPlayer() {
   const input = document.getElementById('t-board-input');
   const name = input.value.trim();
@@ -1344,7 +1357,8 @@ function addBoardPlayer() {
   errEl.style.display='none';
   tState.players = [...(tState.players||[]), name];
   input.value='';
-  tPush(); renderBoard();
+  renderBoard();
+  setSignup(currentTId, name, true);
 }
 
 function removeBoardPlayer(pi) {
@@ -1352,8 +1366,11 @@ function removeBoardPlayer(pi) {
   if (name===undefined) return;
   if (!confirm(`Fjerne ${name} fra poengtavla?`)) return;
   tState.players = (tState.players||[]).filter((_,i)=>i!==pi);
-  if (tState.scores) delete tState.scores[safeKey(name)];
-  tPush(); renderBoard();
+  const key = safeKey(name);
+  if (tState.scores) delete tState.scores[key];
+  renderBoard();
+  setSignup(currentTId, name, false);
+  tWrite({ ['scores/'+key]: null });
 }
 
 function saveBoardScore(pi, raw) {
@@ -1362,19 +1379,20 @@ function saveBoardScore(pi, raw) {
   if (!tState.scores) tState.scores = {};
   const key = safeKey(name);
   const txt = String(raw).trim();
-  if (txt==='') { delete tState.scores[key]; }
-  else {
-    const n = parseInt(txt, 10);
-    if (isNaN(n)) { renderBoard(); return; }
-    tState.scores[key] = { name, score: n, ts: Date.now() };
-  }
-  tPush(); renderBoard();
+  if (txt==='') { delete tState.scores[key]; renderBoard(); tWrite({ ['scores/'+key]: null }); return; }
+  const n = parseInt(txt, 10);
+  if (isNaN(n)) { renderBoard(); return; }
+  const entry = { name, score: n, ts: Date.now() };
+  tState.scores[key] = entry;
+  renderBoard();
+  tWrite({ ['scores/'+key]: entry });
 }
 
 function resetBoard() {
   if (!confirm('Nullstille alle scorer? Spillerne beholdes.')) return;
   tState.scores = {};
-  tPush(); renderBoard();
+  renderBoard();
+  tWrite({ scores: {} });
 }
 
 // Kampene i den rekkefølgen de faktisk spilles: A1, B1, A2, B2 ... Gruppene går parallelt.
@@ -1597,15 +1615,12 @@ function openMatchDialog(grp, idx) {
   let hasScore = typeof r.homeScore==='number';
 
   showMatchDialog(f[0], f[1], tState.mode,
-    // onResult
+    // onResult — skriver kun denne ene kampens resultat, aldri hele
+    // turneringen: to ulike kamper kan lagres samtidig uten å krysse hverandre.
     (winner, loser, hs, as_) => {
-      if (!tState.resultsA) tState.resultsA={};
-      if (!tState.resultsB) tState.resultsB={};
-      const res = grp==='a'?tState.resultsA:tState.resultsB;
-      const key = fkey(f);
-      if (winner===null) { delete res[key]; }
-      else { res[key]={winner,loser,home:f[0],away:f[1],homeScore:hs,awayScore:as_,ts:Date.now()}; }
-      tPush();
+      const field = (grp==='a'?'resultsA/':'resultsB/') + fkey(f);
+      const value = winner===null ? null : {winner,loser,home:f[0],away:f[1],homeScore:hs,awayScore:as_,ts:Date.now()};
+      tWrite({ [field]: value });
     },
     r, scoreH, scoreA, hasScore
   );
@@ -1624,10 +1639,9 @@ function openPlayoffDialog(idx) {
 
   showMatchDialog(pA, pB, tState.mode,
     (winner, loser, hs, as_) => {
-      const key = 'match_'+idx;
-      if (winner===null) { delete tState.playoffResults[key]; }
-      else { tState.playoffResults[key]={winner,loser,homeScore:hs,awayScore:as_,ts:Date.now()}; }
-      tPush();
+      const field = 'playoffResults/match_'+idx;
+      const value = winner===null ? null : {winner,loser,homeScore:hs,awayScore:as_,ts:Date.now()};
+      tWrite({ [field]: value });
     },
     r, scoreH, scoreA, hasScore
   );
