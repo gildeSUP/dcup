@@ -1074,13 +1074,21 @@ async function addTournament() {
   }
   newParticipants.forEach(n => { if (!players.includes(n)) players.push(n); });
 
+  // Nok spillere valgt allerede? Da trenger man ikke innom "Legg til
+  // spillere"-siden og trykke Generer grupper manuelt — gjør det med det
+  // samme, så turneringen er klar til å spilles rett fra opprettelsen.
+  let groupA = [], groupB = [], fixturesA = [], fixturesB = [];
+  if (selectedFormat !== 'board' && players.length >= 4) {
+    ({ groupA, groupB, fixturesA, fixturesB } = computeGroups(players));
+  }
+
   const updates = {};
   updates['events/'+currentEventId+'/tournaments/'+id] = {
     name, sport: selectedSport,
     mode: selectedFormat==='board' ? 'score' : selectedMode,
     format: selectedFormat, scoreDir: selectedScoreDir,
     players,
-    groupA:[], groupB:[], fixturesA:[], fixturesB:[],
+    groupA, groupB, fixturesA, fixturesB,
     resultsA:{}, resultsB:{}, playoffResults:{}, scores:{}, created: Date.now()
   };
   newParticipants.forEach(n => {
@@ -1235,13 +1243,18 @@ function scheduledFixtures(fixtures) {
   return scheduled;
 }
 
+function computeGroups(players) {
+  const s = shuffle(players);
+  const half = Math.ceil(s.length/2);
+  const groupA = s.slice(0,half), groupB = s.slice(half);
+  return { groupA, groupB, fixturesA: roundRobin(groupA), fixturesB: roundRobin(groupB) };
+}
+
 function generateTournament() {
   if ((tState.players||[]).length < 4) { showToast('Legg til minst 4 spillere'); return; }
-  const s = shuffle(tState.players);
-  const half = Math.ceil(s.length/2);
-  tState.groupA = s.slice(0,half); tState.groupB = s.slice(half);
-  tState.fixturesA = roundRobin(tState.groupA);
-  tState.fixturesB = roundRobin(tState.groupB);
+  const { groupA, groupB, fixturesA, fixturesB } = computeGroups(tState.players);
+  tState.groupA = groupA; tState.groupB = groupB;
+  tState.fixturesA = fixturesA; tState.fixturesB = fixturesB;
   tState.resultsA = {}; tState.resultsB = {}; tState.playoffResults = {};
   tPush();
 }
