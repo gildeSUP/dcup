@@ -1896,12 +1896,23 @@ function startFireworks(canvas) {
 }
 
 function startDisplayRotation() {
-  const STAY = 12000; // 12s per turnering
+  const STAY = 12000; // 12s per side
   displayIntervals.push(setInterval(()=>{
-    if (revealBusy) return; // ikke bytt turnering midt i en avsløring
+    if (revealBusy) return; // ikke bytt noe midt i en avsløring
     const tList = visibleDispTournaments();
-    if (tList.length < 2) return; // én turnering: ingenting å rullere mellom
-    dispCurrent = (dispCurrent+1)%tList.length;
+    if (!tList.length) return;
+    const [, t] = tList[Math.min(dispCurrent, tList.length-1)];
+
+    // Er det flere grupper å vise på denne turneringen, bla side først.
+    // Ellers nullstill siden og gå videre til neste turnering.
+    if (dispGroupPage + 1 < groupPages(t)) {
+      dispGroupPage++;
+    } else if (tList.length > 1) {
+      dispGroupPage = 0;
+      dispCurrent = (dispCurrent+1)%tList.length;
+    } else {
+      return; // én turnering, én side: ingenting å rullere mellom
+    }
     renderDisplay();
     animateProgressBar(STAY);
   }, STAY));
@@ -1912,6 +1923,39 @@ function animateProgressBar(duration) {
   if (!fill) return;
   fill.style.transition = 'none'; fill.style.width = '0%';
   setTimeout(()=>{ fill.style.transition = `width ${duration}ms linear`; fill.style.width='100%'; }, 50);
+}
+
+// Hvor mange grupper som får plass samtidig måles, ikke antas: fire grupper à
+// tre spillere får plass på 720p, fire à fem gjør ikke. Å hardkode «maks 2 om
+// gangen» ville bladd når det ikke var nødvendig.
+let dispGroupPage = 0;
+let dispPerPage = null;   // null = ikke målt for denne turneringen ennå
+let dispPageKey = null;   // hvilken turnering og form målingen gjelder
+
+// Formen som avgjør om målingen fortsatt holder: bytter turnering, antall
+// grupper eller antall spillere, må den gjøres på nytt.
+function groupShapeKey(tid, t) {
+  return tid + ':' + groupsOf(t).map(g => g.players.length).join(',');
+}
+
+function measurePerPage(t, paint) {
+  const gs = groupsOf(t);
+  for (let per = gs.length; per > 1; per--) {
+    // Tegn først, slå opp elementet etterpå: ved første rendring finnes det
+    // ikke ennå, og en oppslag før paint ga «alle får plass» uten å måle.
+    paint(gs.slice(0, per));
+    const col = document.getElementById('disp-tables-col');
+    if (!col) return per;
+    // Lesing av scrollHeight tvinger layout, så målingen gjelder det som
+    // nettopp ble tegnet.
+    if (col.scrollHeight <= col.clientHeight + 1) return per;
+  }
+  return 1;
+}
+
+function groupPages(t) {
+  const n = groupsOf(t).length;
+  return dispPerPage ? Math.ceil(n / dispPerPage) : 1;
 }
 
 function renderDisplay() {
@@ -1930,6 +1974,7 @@ function renderDisplay() {
   document.getElementById('disp-indicator').innerHTML = tList.map((_,i)=>
     `<div class="display-dot ${i===dispCurrent?'active':''}"></div>`
   ).join('');
+
 
   const board = isBoard(t);
   const pod = podium(t);
@@ -1960,14 +2005,34 @@ function renderDisplay() {
     return;
   }
 
-  content.innerHTML = `
-    <div class="display-main">
-      <div class="display-col">
-        <div class="display-section-title">${board?'Poengtavle':'Tabell'}</div>
-        ${board?renderDisplayBoard(t):renderDisplayTables(t)}
-      </div>
-      <div class="display-col">${board?renderDisplayBoardSide(t):renderDisplaySide(t)}</div>
-    </div>`;
+  const paint = (subset, label) => {
+    content.innerHTML = `
+      <div class="display-main">
+        <div class="display-col" id="disp-tables-col">
+          <div class="display-section-title">${board?'Poengtavle':'Tabell'}${label||''}</div>
+          ${board?renderDisplayBoard(t):renderDisplayTables(t, subset)}
+        </div>
+        <div class="display-col">${board?renderDisplayBoardSide(t):renderDisplaySide(t)}</div>
+      </div>`;
+  };
+
+  if (board) { paint(); return; }
+
+  const gs = groupsOf(t);
+  const key = groupShapeKey(tid, t);
+  if (key !== dispPageKey) {
+    dispPageKey = key;
+    dispGroupPage = 0;
+    dispPerPage = null;
+  }
+  if (dispPerPage === null) dispPerPage = measurePerPage(t, paint);
+
+  const pages = groupPages(t);
+  if (dispGroupPage >= pages) dispGroupPage = 0;
+  const from = dispGroupPage * dispPerPage;
+  const subset = gs.slice(from, from + dispPerPage);
+  // Sidetelleren står bare når det faktisk er mer enn én side
+  paint(subset, pages > 1 ? ` · side ${dispGroupPage+1} av ${pages}` : '');
 }
 
 function renderDisplayBoard(t) {
@@ -2015,11 +2080,12 @@ function renderDisplayBoardSide(t) {
   return lastCard + doneCard;
 }
 
-function renderDisplayTables(t) {
+function renderDisplayTables(t, subset) {
   const showGD = t.mode==='score';
   const showD = t.mode==='wdl';
+  const gs = subset || groupsOf(t);
   return `<div class="display-grid">
-    ${groupsOf(t).map(g=>{
+    ${gs.map(g=>{
       if(!g.players.length) return '';
       const rows=calcStandings(g.players, g.results, t.mode, scoreDirOf(t));
       return `<div>

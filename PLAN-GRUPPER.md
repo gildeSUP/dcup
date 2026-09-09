@@ -3,7 +3,11 @@
 Overleveringsdokument. Skrevet for en økt som ikke har vært med på diskusjonen —
 alt du trenger å vite skal stå her.
 
-**Status:** spesifisert og klar. Ingen uløste designspørsmål.
+**Status:** steg 0–5 er ferdig, testet og committet. Bare **steg 6 (wipe og
+deploy)** står igjen — det er en manuell operasjon i Firebase-konsollen.
+
+Endringer gjort underveis som avviker fra opprinnelig plan er markert
+**[endret]** der de står.
 
 ---
 
@@ -357,7 +361,7 @@ formatet, ikke tallet.
 
 Hvert steg skal kunne stå alene og verifiseres.
 
-### Steg 0 — commit det som ligger i arbeidstreet
+### Steg 0 — commit det som ligger i arbeidstreet ✅
 
 `dcup.js` og `index.html` har ucommittede fikser (XSS via `data-key`,
 `focusTId`-nullstilling, deterministisk tiebreak, `isSignupLocked`,
@@ -367,7 +371,7 @@ samme funksjonene.
 
 Slett samtidig `nextUp()` (linje ~1052). Den er definert og brukes ingen steder.
 
-### Steg 1 — datamodell, uten å endre atferd
+### Steg 1 — datamodell, uten å endre atferd ✅
 
 Innfør `groups[]`, `groupsOf`, `resultsPath`, ny `playOrder`. Konverter alle
 lesesteder. La `computeGroups` fortsatt lage **nøyaktig 2** grupper.
@@ -378,7 +382,7 @@ bevise at den *ikke* endrer noe, og da er tester det billigste verktøyet.
 *Ferdig når:* en fersk 2-gruppers turnering oppfører seg identisk med i dag —
 grupper, kamper, tabell, sluttspill, liveskjerm, vinneravsløring.
 
-### Steg 2 — antallet velges
+### Steg 2 — antallet velges ✅
 
 `MIN_GROUP`/`ALLOWED_GROUPS`/`TARGET_MATCHES`, `allowedGroups`, `maxGroups`, `matchCount`,
 `suggestGroups`, `groupSizes`, `computeGroups(players, g)`, dialogen,
@@ -392,7 +396,7 @@ to faner mot samme turnering — meld på i den ene, start i den andre, og se om
 *Ferdig når:* 3 deltakere gir bare valget «1». 12 deltakere tilbyr 1/2/4 og
 foreslår 4. En turnering med 4 grupper får fire grupper med riktige størrelser.
 
-### Steg 3 — vinner og sluttspill for alle antall
+### Steg 3 — vinner og sluttspill for alle antall ✅
 
 `playoffMatches(t)`, `podium`, `isStarted`, `isFinished`, `winnerBlurb` over
 `groupsOf`. `playoffResults` lagrer navn i `home`/`away`. `openPlayoffDialog`
@@ -402,35 +406,84 @@ tar `key` i stedet for indeks.
 før. Fire grupper gir to semier, finale og bronse. Vinneravsløringen spiller på
 liveskjermen i alle tre tilfellene.
 
-### Steg 4 — rendring og CSS
+### Steg 4 — rendring og CSS ✅
 
-Gruppekort, kampliste, tabeller og sluttspillfanen for n grupper.
-Sluttspillfanen viser en forklaring i stedet for kamper når `groups.length > 2`.
+**[endret]** Tre av de fire CSS-punktene var alt gjort før dette steget:
+gruppefargene og `--purple` kom i steg 1 (uten dem mistet gruppeoverskriftene
+fargen, altså var steg 1 ikke atferdsnøytralt), `.display-queue-grp.g0`–`.g3`
+likeså, og auto-fit måtte inn i steg 2 fordi én gruppe ble mulig der og
+`1fr 1fr` etterlot en tom kolonne.
 
-CSS som må røres:
-- `.groups-grid` er `1fr 1fr` (~linje 138 i `dcup.css`) → `repeat(auto-fit, minmax(200px, 1fr))`
-- `.two-col` og `.display-grid` samme sted
-- Gruppefarger: i dag `--accent`/`--accent-text` for A og `--green`/`--green-text`
-  for B. Trengs fire. `--amber` finnes; en fjerde (`--purple`/`--purple-bg`/`--purple-text`)
-  må legges til i `:root` **og** i `@media (prefers-color-scheme: dark)`.
-  Merk at mørk modus bare omdefinerer `-bg`- og `-text`-variantene, ikke
-  grunnfargene.
-- `.display-queue-grp.a` / `.b` → `.g0`–`.g3`
+**[endret]** Linja «sluttspillfanen viser en forklaring når `groups.length > 2`»
+gjelder ikke lenger — steg 3 ga fire grupper en ekte bracket. Forklaringen vises
+ved **én** gruppe: «Én gruppe — vinneren er den som topper tabellen.»
 
-*Ferdig når:* fire grupper er lesbare på mobil og på liveskjermen, i lys og mørk modus.
+Det som faktisk ble gjort: **kolonnetallet følger antall grupper**, satt som
+`data-n` på `#t-groups-grid`, `#t-fixtures-wrap` og `#t-standings-wrap`.
 
-### Steg 5 — liveskjermen blar mellom gruppene
+```css
+.groups-grid, .two-col { grid-template-columns: 1fr; }
+@media (min-width: 560px) {
+  .groups-grid:not([data-n="1"]),
+  .two-col:not([data-n="1"]) { grid-template-columns: repeat(2, 1fr); }
+}
+```
 
-`renderDisplayTables` viser maks 2 grupper om gangen. Ny `dispGroupPage`.
-På hvert 12s-tikk: er det flere sider igjen på denne turneringen, bla side;
-ellers nullstill siden og gå til neste turnering.
+Rent auto-fit ga tre kolonner i appens 868px, altså **3+1 ved fire grupper**.
+Fire tabeller side om side blir dessuten 217px hver — for smalt for seks
+kolonner. Bare 1, 2 og 4 er mulig, så regelen er: én gruppe full bredde, ellers
+2×2.
 
-`dispGroupPage` må nullstilles når `dispCurrent` endres og når turneringslista
-endres. Rotasjonen skal fortsatt stå stille mens `revealBusy` er `true`.
+*Verifisert:* mobil 375px og liveskjerm 1280×720, i lys og mørk modus. Alle fire
+gruppefarger har lesbar tekst i begge temaer.
 
-*Ferdig når:* en turnering med 4 grupper viser alle fire før skjermen går videre.
+### Steg 5 — liveskjermen blar mellom gruppene ✅
 
-### Steg 6 — wipe og deploy
+**[endret] Betingelsen er målt overflyt, ikke «maks 2 om gangen».** Fire grupper
+à 3 spillere får plass samtidig på 720p — `scrollHeight` 544 av `clientHeight`
+544. Med et hardkodet tall ville skjermen bladd når den ikke trengte det, og delt
+opp en oversikt som var komplett. Fire grupper à 5 spillere flyter derimot over
+(687 av 544) og må blas.
+
+```js
+let dispGroupPage = 0;
+let dispPerPage = null;   // null = ikke målt for denne turneringen ennå
+let dispPageKey = null;   // hvilken turnering og form målingen gjelder
+
+// Bytter turnering, antall grupper eller antall spillere, må det måles på nytt
+function groupShapeKey(tid, t) {
+  return tid + ':' + groupsOf(t).map(g => g.players.length).join(',');
+}
+
+function measurePerPage(t, paint) {
+  const gs = groupsOf(t);
+  for (let per = gs.length; per > 1; per--) {
+    paint(gs.slice(0, per));                          // tegn først
+    const col = document.getElementById('disp-tables-col');
+    if (!col) return per;
+    if (col.scrollHeight <= col.clientHeight + 1) return per;
+  }
+  return 1;
+}
+```
+
+`renderDisplayTables(t, subset)` tar nå en delmengde. Venstre kolonne har fått
+`id="disp-tables-col"` for å kunne måles. Seksjonstittelen får «· side 1 av 2»
+bare når det faktisk er mer enn én side.
+
+Rotasjonen på hvert 12s-tikk: er det flere sider igjen på denne turneringen, bla
+side; ellers nullstill siden og gå til neste turnering. Står stille mens
+`revealBusy` er `true`.
+
+**Felle jeg gikk i:** slå opp `disp-tables-col` **etter** `paint()`, ikke før.
+Ved første rendring finnes elementet ikke ennå, og et oppslag før paint ga
+«alle får plass» uten å måle noe — gruppe C og D ble klippet uten feilmelding.
+
+*Verifisert:* fire à 3 gir én side uten sideteller. Fire à 5 gir 2 per side og
+to sider, ingen overflyt på noen av dem. Over to tikk: side 1 → side 2 → neste
+turnering med siden nullstilt.
+
+### Steg 6 — wipe og deploy ⬅️ gjenstår
 
 Tøm `events` i Firebase-konsollen, deploy, opprett et testevent.
 
@@ -472,6 +525,17 @@ trenger minst `<div id="screen-home" class="screen">`. Uten `?e=` i URL-en gjør
 `matchCount`, `suggestGroups`, `groupSizes`, `playOrder`, `calcStandings`,
 `podium`, `boardStandings`, `groupsOf`.
 
+**Mål DOM etter at du har tegnet, ikke før.** `measurePerPage` i steg 5 slår opp
+`disp-tables-col` etter `paint()`. Gjør du det før, finnes elementet ikke ved
+første rendring, og målingen svarer «alt får plass» uten å ha målt noe.
+
+**Testsiden feiler stille.** Er det en `SyntaxError` i `tests.html` — for
+eksempel to `const` med samme navn — stopper skriptet og siden står på
+«kjører…» i stedet for å rapportere. Og `tests.html` må selv ikke caches: den
+cache-buster `dcup.js`, men rapporterte forrige kjørings tall til den fikk
+`<meta http-equiv="Cache-Control" content="no-store">`. Sjekk alltid at antallet
+tester stemmer med det du la inn.
+
 **Ingen egen utviklingsdatabase.** Lokal kjøring skriver til samme Firebase som
 produksjon. Testevents lagd underveis blir liggende — de forsvinner i wipen i
 steg 6.
@@ -480,32 +544,46 @@ steg 6.
 
 ## 8. Åpne spørsmål
 
-**1. Seeding på tvers av grupper (fase B).** Dette er det egentlige hinderet, og
-det er et designspørsmål, ikke kode. Å rangere gruppevinnere fra grupper med
-ulik størrelse: poeng er ikke sammenlignbart når den ene har spilt 3 kamper og
-den andre 6. Poeng per kamp er nesten sammenlignbart. Selve bracketen — semi
-(1–4, 2–3), finale, bronse for 4 grupper; bye til beste vinner for 3 — er
-kanskje 150 linjer. Regelen er det vanskelige.
+**1. ~~Seeding på tvers av grupper (fase B).~~ Løst — behovet forsvant.**
+**[endret]** Fire grupper pares vilkårlig (A–B, C–D) i stedet for å rangeres mot
+hverandre. Trekningen i `computeGroups` er allerede tilfeldig, så parringen er
+tilfeldig av seg selv, og poeng trenger aldri sammenlignes mellom grupper som
+har spilt ulikt antall kamper. 3 grupper er sperret fordi ingen symmetrisk
+bracket finnes for tre — se § 1.
 
-**2. Ekte tresykel kan ikke løses av noen innbyrdes regel.** `PRIORITERINGER.md`
-foreslår å løse innbyrdes oppgjør på miniligaen mellom de like i stedet for
-parvis. Det fikser tre like inne i en større gruppe, men **ikke** en ren
-tresykel i en treergruppe — der *er* miniligaen hele gruppa, og alle står 1–1.
-Ingenting kan skille dem sportslig. Spørsmålet er hva UI-et skal si: markere
-dem som genuint delt plass, eller la trekningen avgjøre stille slik i dag?
-Utenfor scope her, men advarselen i § 3 forutsetter at det ikke er løst.
+**2. Ekte tresykel — delvis løst.** **[endret]** Innbyrdes oppgjør er nå en
+**miniliga** blant de likestilte (`calcStandings`), ikke en parvis komparator.
+Det var også en reell bug: en parvis komparator er ikke transitiv, så
+`Array.sort` ga ulik tabell avhengig av rekkefølgen spillerne lå i gruppa
+(PRIORITERINGER #28). Miniligaen er transitiv av konstruksjon og skiller tre
+like inne i en større gruppe.
+
+En **ren** tresykel i en treergruppe kan fortsatt ikke skilles sportslig — der
+er miniligaen hele gruppa og alle står 1–1. Den faller nå til **alfabetisk**
+rekkefølge, som er forutsigbar og lik på alle skjermer. Advarselen i § 3 sier
+det: «kan ikke skilles sportslig — da avgjør alfabetisk rekkefølge».
+
+Gjenstår som designspørsmål: skal UI-et markere dem som genuint delt plass?
 
 **3. Handikapp som seeding.** Kommer handikapp inn senere, kan det brukes til å
-sette sammen eller seede gruppene i stedet for ren stokking. Ikke nå — notert så det ikke går tapt.
+sette sammen eller seede gruppene i stedet for ren stokking. Ikke nå — notert så
+det ikke går tapt.
 
 **4. Manuell justering av grupper.** Første ting folk kommer til å be om når de
 ser en skjev trekning: flytte en spiller, eller trekke på nytt. Ikke med i denne
 planen. Verdt å vite at det kommer.
 
-**4. En 3–4-gruppers turnering blir aldri «ferdig».** Uten sluttspill gir
-`podium()` `null`, så avsløringen spiller ikke og turneringen blir stående på
-liveskjermen til noen trykker «merk som fullført». Akseptabelt i fase A, men det
-bør stå i dialogteksten.
+**5. En turnering blir aldri «ferdig» før sluttspillet er spilt.**
+**[endret]** Gjelder ikke bare 3–4 grupper lenger, og ikke fordi sluttspillet
+mangler: alle gruppetall får nå en vinner. Men `podium()` er `null` til finalen
+er registrert, så avsløringen spiller ikke og turneringen står på liveskjermen
+til noen trykker «merk som fullført». For én gruppe kåres vinneren så snart alle
+gruppekampene er spilt.
 
-**5. Bør `nextUp()` fjernes?** Den er definert (linje ~1052) og ikke brukt noe
-sted. Enten ta den i bruk på liveskjermen eller slette den.
+**6. ~~Bør `nextUp()` fjernes?~~ Slettet i steg 1.** Den var definert og brukt
+ingen steder.
+
+**7. Ingen dekning av rendring eller Firebase.** `tests.html` har 135 tester
+over de rene funksjonene, men `renderTournamentView`, `renderDisplay` og alt som
+rører databasen er udekket. `renderTournamentView` er skrevet nesten helt om i
+denne planen — det er den største gjenstående risikoen.
