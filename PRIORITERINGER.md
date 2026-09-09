@@ -45,11 +45,23 @@ liveskjermen (`visibleDispTournaments`, `dcup.js:1409`).
 ### 8. ✅ Fikset i `22b7f0a`
 Ny `isSignupLocked()` — sperren gjelder bare gruppespill.
 
-### 9. Innskriving i poengtavla blir slettet av andres oppdateringer
-`renderBoard` (`dcup.js:930`) bytter ut hele `innerHTML`. Kommer det en
-oppdatering fra en annen mobil mens du taster inn din egen score, forsvinner
-det du har skrevet. Nettopp poengtavla er stedet der mange skriver samtidig.
-Behold fokusert felt, eller oppdater radene i stedet for å bygge dem på nytt.
+### 9. ✅ Fikset
+`renderBoard` bygde hele lista på nytt med `innerHTML` ved hver oppdatering.
+Nå gjenbrukes raden per spiller (`buildBoardRow` lager den én gang), feltet som
+har fokus får aldri `value` overskrevet, og rekkefølgen endres bare når den
+faktisk har endret seg — en flyttet node blurres av nettleseren, så fokus og
+markørposisjon settes tilbake når en omsortering var nødvendig.
+
+Raden bygges i DOM-et i stedet for som HTML-streng, så navnet ligger i
+`textContent` og i en closure, aldri i en `onclick`-streng (beholder
+egenskapen fra P0 #1). Indeksen i `players` slås opp når hendelsen skjer, ikke
+når raden lages — den kunne flyttet seg i mellomtiden.
+
+**Verifisert med to klienter:** telefon A taster «42» i sitt eget felt uten å
+forlate det, telefon B lagrer sin score samtidig. Før: feltet ble tømt og
+fokus forsvant. Etter: «42» står, fokus står i samme felt, og B sin score
+vises. Regresjonstestet sortering ved endret score, tømming av score,
+fjerning av spiller, nullstilling og tom tavle.
 
 ### 10. Ingen måte å slette en turnering eller et event
 `resetTournament` nullstiller, men en turnering opprettet ved et uhell blir

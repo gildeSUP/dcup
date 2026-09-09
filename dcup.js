@@ -1187,27 +1187,94 @@ function boardStandings(t) {
   });
 }
 
+// Raden lages i DOM-et, ikke som HTML-streng: navnet havner i textContent og
+// i en closure, aldri i en onclick-streng (samme grunn som P0 #1). Indeksen
+// slås opp når hendelsen skjer — den kan ha flyttet seg siden raden ble laget.
+function buildBoardRow(name) {
+  const row = document.createElement('div');
+  row.className = 'board-row';
+  row.dataset.name = name;
+
+  const pos = document.createElement('span');
+  pos.className = 'pos px';
+
+  const nameEl = document.createElement('span');
+  nameEl.className = 'board-name';
+  nameEl.textContent = name;
+
+  const input = document.createElement('input');
+  input.className = 'board-score';
+  input.type = 'text';
+  input.inputMode = 'numeric';
+  input.pattern = '[0-9-]*';
+  input.placeholder = '—';
+  input.onchange = () => saveBoardScore((tState.players||[]).indexOf(name), input.value);
+
+  const del = document.createElement('button');
+  del.className = 'board-del';
+  del.title = 'Fjern spiller';
+  del.textContent = '×';
+  del.onclick = () => removeBoardPlayer((tState.players||[]).indexOf(name));
+
+  row.append(pos, nameEl, input, del);
+  return row;
+}
+
+// Bygger ikke lista på nytt ved hver oppdatering: kommer det en score fra en
+// annen mobil mens du taster inn din egen, ville innerHTML byttet ut feltet
+// under fingrene dine og spist det du hadde skrevet (P1 #9). Radene gjenbrukes
+// per spiller, feltet du står i røres ikke, og rekkefølgen endres bare når den
+// faktisk har endret seg — å flytte en node blurrer den i de fleste nettlesere.
 function renderBoard() {
   const rows = boardStandings(tState);
   const scored = rows.filter(r=>r.score!==null).length;
   document.getElementById('t-board-hint').textContent =
     `${scored} av ${rows.length} har score · ${SCORE_DIRS[scoreDirOf(tState)].label.toLowerCase()}`;
-  document.getElementById('t-board-list').innerHTML = rows.length
-    ? rows.map(r=>{
-        const pc = r.pos===1?'p1':r.pos===2?'p2':r.pos===3?'p3':'px';
-        // Indeks i players-lista, ikke navnet: da slipper navnet aldri inn i en onclick-streng
-        const pi = (tState.players||[]).indexOf(r.name);
-        return `<div class="board-row${r.score===null?' unscored':''}">
-          <span class="pos ${pc}">${r.pos||'–'}</span>
-          <span class="board-name">${escapeHTML(r.name)}</span>
-          <input class="board-score" type="text" inputmode="numeric" pattern="[0-9-]*"
-            value="${r.score===null?'':r.score}" placeholder="—"
-            onchange="saveBoardScore(${pi}, this.value)" />
-          <button class="board-del" title="Fjern spiller"
-            onclick="removeBoardPlayer(${pi})">×</button>
-        </div>`;
-      }).join('')
-    : '<p class="muted">Ingen spillere ennå.</p>';
+
+  const list = document.getElementById('t-board-list');
+  const active = document.activeElement;
+  const editing = active && active.classList && active.classList.contains('board-score') && list.contains(active)
+    ? { input: active, start: active.selectionStart, end: active.selectionEnd }
+    : null;
+
+  if (!rows.length) {
+    list.innerHTML = '<p class="muted">Ingen spillere ennå.</p>';
+  } else {
+    const existing = new Map();
+    Array.from(list.children).forEach(el => {
+      const n = el.dataset && el.dataset.name;
+      if (n) existing.set(n, el); else el.remove();   // «ingen spillere»-teksten
+    });
+
+    const ordered = rows.map(r => {
+      const row = existing.get(r.name) || buildBoardRow(r.name);
+      existing.delete(r.name);
+      const pc = r.pos===1?'p1':r.pos===2?'p2':r.pos===3?'p3':'px';
+      row.className = 'board-row' + (r.score===null ? ' unscored' : '');
+      const pos = row.firstElementChild;
+      pos.className = 'pos ' + pc;
+      pos.textContent = r.pos || '–';
+      const input = row.querySelector('.board-score');
+      // Feltet som redigeres akkurat nå skal beholde det som er tastet inn
+      if (!editing || editing.input !== input) input.value = r.score===null ? '' : r.score;
+      return row;
+    });
+
+    existing.forEach(el => el.remove());              // spillere som er fjernet
+
+    const sameOrder = ordered.length === list.children.length
+      && ordered.every((row, i) => list.children[i] === row);
+    if (!sameOrder) {
+      ordered.forEach(row => list.appendChild(row));
+      // appendChild flytter noden, og en flyttet node mister fokus i de fleste
+      // nettlesere. Verdien overlever (samme node), fokus og markør settes tilbake.
+      if (editing && document.activeElement !== editing.input) {
+        editing.input.focus();
+        try { editing.input.setSelectionRange(editing.start, editing.end); } catch (err) {}
+      }
+    }
+  }
+
   const displayBtn = document.getElementById('t-board-display-btn');
   displayBtn.textContent = tState.hideFromDisplay ? '✓ Skjult fra liveskjerm — vis igjen' : 'Merk som fullført (skjul fra liveskjerm)';
 }
