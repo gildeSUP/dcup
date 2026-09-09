@@ -158,23 +158,33 @@ det som ble rapportert.
 
 ## Rapportert 9. september, ikke fikset
 
-### 30. Bunnark er festet til bunnen også på store skjermer
+### 30. ✅ Fikset — med en bevisst snarvei
 
-Alle fire dialogene (`#join-overlay`, `#people-overlay`,
-`#add-tournament-overlay`, `#start-tournament-overlay`) har
-`align-items:flex-end` som **inline** stil, og arket har
-`border-radius: var(--radius-lg) var(--radius-lg) 0 0` med
-`padding-bottom: 2.5rem`. På en 2000px bred skjerm klistrer dialogen seg til
-nederste kant med avrundede hjørner bare øverst. Skal være bunnark på mobil,
-sentrert på desktop.
+Alle fem dialogene er nå bunnark under 640px og sentrert over. Kampdialogen
+manglet dessuten `max-width` og strakk seg over hele skjermbredden; den er
+kappet til 540px som de andre.
 
-Samme gjelder `.match-dialog-overlay` / `.match-dialog` i `dcup.css:182-183`,
-som har det i CSS i stedet for inline.
+**Snarveien:** fiksen ligger som én `@media (min-width: 640px)` nederst i
+`dcup.css`, med `!important` på de fire inline-stilte dialogene i stedet for at
+inline-stilene ble flyttet til `.sheet-overlay`/`.sheet`. Grunnen var
+tidspunktet — 17 timer før et event skulle ikke markupen til fem dialoger røres.
+Kampdialogen ligger i CSS og trengte ingen `!important`.
 
-Fiksen krever at de inline stilene flyttes til klasser — en media query kan ikke
-overstyre inline `align-items` uten `!important`. Foreslått: `.sheet-overlay` og
-`.sheet`, brukt på alle fem, med `@media (min-width: 640px)` som sentrerer og
-runder alle hjørner.
+**Opprydningen står igjen:** flytt inline-stilene til klasser og fjern
+`!important`-ene. Da forsvinner også behovet for å liste fire id-er i
+selektoren.
+
+**Verifisert** på 390px og 1440px for alle fem dialogene (ny turnering, start
+turnering, kampdialog, meld på, deltakere): mobil er uendret (bunnfestet, rette
+bunnhjørner, full bredde), desktop er sentrert med runde hjørner og 540px.
+`dcup.css?v=` er bumpet til 8 — uten det ville nettleseren servert gammel CSS.
+
+### 32. Toasten legger seg oppå knappene i et bunnark på mobil
+
+`.toast` er `position:fixed; bottom:1.5rem`, og et bunnark dekker akkurat den
+sonen. «1 gruppe · 6 kamper» havnet midt oppå Lagre-knappen i påmeldingsarket.
+Ikke ny — den har alltid ligget der — men synlig så snart en toast vises mens en
+dialog er åpen. Løfte toasten når en dialog er åpen, eller vise den øverst.
 
 ### 31. Navnefeltet får ikke fokus når dialogen åpnes
 

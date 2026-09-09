@@ -355,3 +355,33 @@ label.signup-row input { width: 18px; height: 18px; flex-shrink: 0; accent-color
 @keyframes float { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-6px);} }
 @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
 @keyframes fadeInDown { from{opacity:0;transform:translateY(-10px);} to{opacity:1;transform:translateY(0);} }
+
+/* ===== BUNNARK PÅ MOBIL, SENTRERT DIALOG PÅ STOR SKJERM (#30) =====
+   De fire overlayene har align-items — og arkene sine hjørner, padding og
+   animasjon — som INLINE stil, og inline kan ikke overstyres av en media query
+   uten !important. Klassevarianten i #30 er den ryddige opprydningen; denne er
+   den avgrensede som ikke rører markupen til fem dialoger rett før et event.
+   !important-ene her er derfor bevisste og hører sammen med den opprydningen.
+   Under 640px gjelder ingenting av dette: mobil er helt uendret. */
+@media (min-width: 640px) {
+  #join-overlay, #people-overlay, #start-tournament-overlay, #add-tournament-overlay {
+    align-items: center !important;
+  }
+  #join-overlay > div, #people-overlay > div,
+  #start-tournament-overlay > div, #add-tournament-overlay > div {
+    border-radius: var(--radius-lg) !important;
+    /* 2.5rem nederst finnes for å klarere hjemindikatoren på telefon */
+    padding-bottom: 1.25rem !important;
+    /* slideUp kommer fra skjermkanten, og ser feil ut når arket står midt på */
+    animation: fadeIn 0.15s ease !important;
+  }
+  /* Kampdialogen ligger i CSS, ikke inline, så den trenger ingen !important.
+     Den mangler dessuten max-width og strekker seg over hele skjermbredden. */
+  .match-dialog-overlay { align-items: center; }
+  .match-dialog {
+    max-width: 540px;
+    border-radius: var(--radius-lg);
+    padding-bottom: 1.25rem;
+    animation: fadeIn 0.15s ease;
+  }
+}
