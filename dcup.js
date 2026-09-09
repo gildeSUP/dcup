@@ -1958,6 +1958,23 @@ function groupPages(t) {
   return dispPerPage ? Math.ceil(n / dispPerPage) : 1;
 }
 
+// Målingen gjelder viewporten den ble gjort i. Går skjermen til fullskjerm på
+// TV-en fortsetter den ellers å bla selv om alt får plass — og motsatt vei blir
+// gruppe C og D klippet bort av .display-col { overflow:hidden } uten et pip,
+// fordi målingen fortsatt sier at alle får plass.
+// Debounces: resize fyrer per frame når man drar i vinduet, og measurePerPage
+// tvinger layout opptil én gang per gruppe.
+let dispResizeTimer = null;
+window.addEventListener('resize', () => {
+  const shown = document.getElementById('screen-display');
+  if (!shown || !shown.classList.contains('active') || dispPageKey === null) return;
+  clearTimeout(dispResizeTimer);
+  dispResizeTimer = setTimeout(() => {
+    dispPerPage = null;
+    renderDisplay();
+  }, 250);
+});
+
 function renderDisplay() {
   const tList = visibleDispTournaments();
   if (!tList.length) {

@@ -111,34 +111,70 @@ tvers står fortsatt åpent.
 
 ## Nye funn
 
-### 28. Innbyrdes oppgjør er ikke transitivt — tresykler får vilkårlig rekkefølge
-`calcStandings` bruker `h2h` som parvis sammenligning. I en tresykel (A slår B,
-B slår C, C slår A) står alle tre likt på poeng og seire, og `h2h` gir
-motstridende svar for hvert par. `Array.sort` med en inkonsistent komparator gir
-da ulikt resultat avhengig av hvilken rekkefølge spillerne ligger i gruppa.
+### 28–29. ✅ Fikset i `c56f2ea`
 
-Verifisert mot alle åtte utfall av en treergruppe uten uavgjort: **to av dem er
-sykler**, og hver av dem gir tre forskjellige tabeller. `localeCompare`-fiksen i
-P0 #4 hjelper ikke — koden når aldri dit.
+**28** — `h2h` som parvis komparator er erstattet av en **miniliga** blant de
+likestilte i `calcStandings`: poeng regnet bare på kampene mellom dem. Én verdi
+per spiller, altså transitiv av konstruksjon. Klyngene deles etter de transitive
+nøklene (poeng, seire, målforskjell) og sorteres internt på miniligaen, med
+alfabetisk som siste utgang. Løser også tre like inne i en større gruppe.
+Advarselen i startdialogen lover ikke lenger trekning. Testet at alle seks
+permutasjoner av en tresykel gir samme rekkefølge.
 
-Rekkefølgen er stabil for en gitt turnering, siden trekningen ligger lagret. Men
-den er avgjort av trekningen, ikke av resultatene: **én av fire treergrupper i
-W/T får gruppevinneren utpekt av loddtrekning.** I `score`-modus bryter
-målforskjell sykelen først.
+**29** — kollisjonssjekken i `renamePerson` ser nå i `eventPeople` **og** i alle
+turneringer via `tournamentHasName`.
 
-Riktig fiks for tre like inne i en *større* gruppe er å avgjøre på miniligaen
-mellom dem i stedet for parvis. En ren tresykel i en treergruppe kan ikke løses
-sportslig — der er miniligaen hele gruppa. Da er det ærligere å vise delt plass,
-slik `boardStandings` gjør ved lik score.
+**Gjenstår fra #29:** `addTPlayer` og `addBoardPlayer` skriver aldri til
+`people/`. Utover kollisjonssjekken betyr det at en spiller lagt til i
+turneringsoppsettet ikke finnes i deltakerlista — hun kan ikke omdøpes eller
+fjernes sentralt, og dukker ikke opp i forhåndsvalget for neste turnering. Det
+er nok den egentlige buggen bak #29, men å registrere dem endrer atferd utover
+det som ble rapportert.
 
-### 29. Omdøping kan lage to spillere med samme navn
-`renamePerson` sperrer mot kollisjon ved å sjekke `eventPeople`. Men `addTPlayer`
-og `addBoardPlayer` skriver bare til turneringens `players` via `setSignup` —
-aldri til `people`. En spiller lagt til direkte i turneringsoppsettet finnes
-altså ikke i `eventPeople`.
+---
 
-Døp om «Kari» til «Ola» når en annen «Ola» ble lagt til i oppsettet: sjekken
-slipper det gjennom, gruppa får to like navn, og `fkey` kolliderer slik at to
-kamper deler resultatnøkkel. Tabellen blir feil.
+## Rapportert 9. september, ikke fikset
 
-Fiksen er å utvide sjekken til alle turneringers `players`, ikke bare `people`.
+### 30. Bunnark er festet til bunnen også på store skjermer
+
+Alle fire dialogene (`#join-overlay`, `#people-overlay`,
+`#add-tournament-overlay`, `#start-tournament-overlay`) har
+`align-items:flex-end` som **inline** stil, og arket har
+`border-radius: var(--radius-lg) var(--radius-lg) 0 0` med
+`padding-bottom: 2.5rem`. På en 2000px bred skjerm klistrer dialogen seg til
+nederste kant med avrundede hjørner bare øverst. Skal være bunnark på mobil,
+sentrert på desktop.
+
+Samme gjelder `.match-dialog-overlay` / `.match-dialog` i `dcup.css:182-183`,
+som har det i CSS i stedet for inline.
+
+Fiksen krever at de inline stilene flyttes til klasser — en media query kan ikke
+overstyre inline `align-items` uten `!important`. Foreslått: `.sheet-overlay` og
+`.sheet`, brukt på alle fem, med `@media (min-width: 640px)` som sentrerer og
+runder alle hjørner.
+
+### 31. Navnefeltet får ikke fokus når dialogen åpnes
+
+`showJoinDialog` tømmer feltet men kaller ikke `focus()`. Samme i
+`showAddTournament` og `showStartDialog`. Merk at `focus()` på iOS bare virker
+i en brukerinitiert hendelse — det er tilfellet her, siden dialogen åpnes av et
+klikk.
+
+---
+
+## Ucommittet i arbeidstreet
+
+`dcup.js` har én ucommittet endring: **resize-lytter på liveskjermen.**
+`dispPerPage` ble bare invalidert av `groupShapeKey` (turnering og
+spillerantall), ikke av viewporten. Går skjermen til fullskjerm fortsatte den å
+bla selv om alt fikk plass; motsatt vei sa målingen «alle får plass» og
+`.display-col { overflow:hidden }` klippet bort gruppe C og D uten feilmelding.
+
+Lytteren er debounced med 250ms — `resize` fyrer per frame under en vindusdrag,
+og `measurePerPage` tvinger layout opptil én gang per gruppe. Den er også
+guardet på at display-skjermen faktisk er aktiv.
+
+**Ikke verifisert i nettleser.** `events` ble wipet før jeg fikk testet, så
+testdataene forsvant. Trenger en turnering med fire grupper à fem spillere
+(20 deltakere), målt på 1280×720 der den skal gi 2 per side, og deretter et
+høyere vindu der den skal måle på nytt til 4 per side.
