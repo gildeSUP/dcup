@@ -670,7 +670,7 @@ const PREFILL_CHOICES = {
   none:   { label:'Ingen', icon:'🚫' },
   manual: { label:'Velg manuelt', icon:'✅' },
 };
-let prefillChoice = 'none';
+let prefillChoice = 'all';
 let prefillManualSelected = {};
 // Nye navn lagt til her og nå, mens turneringen opprettes — lagres først
 // (som deltakere og som spillere på turneringen) når "Opprett" trykkes.
@@ -1047,7 +1047,7 @@ function copyEventLink() {
 function showAddTournament() {
   selectedSport = 'pingpong'; selectedMode = 'wl';
   selectedFormat = 'groups'; selectedScoreDir = 'high';
-  prefillChoice = 'none'; prefillManualSelected = {}; newParticipants = [];
+  prefillChoice = 'all'; prefillManualSelected = {}; newParticipants = [];
   renderSportGrid();
   renderFormatGrid();
   renderPrefillGroup();
