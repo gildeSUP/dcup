@@ -511,6 +511,48 @@ første folk vil oppleve hvis noe er galt.
   spillerlista: alt rendres som tekst, ingen `img`-tagg havner i DOM-et,
   ingen JS-feil. (Dekker ett av punktene i #34.)
 
+#### 44. Bunnarket kan scrolles vekk når tastaturet er oppe (rapportert på mobil)
+
+**Rapportert av bruker på telefon:** trykker du i et felt i en dialog, scroller
+siden riktig — men så er det mulig å scrolle videre slik at arket forsvinner.
+
+**Ikke reprodusert her.** Sandkassen har bare Chromium, og der virker låsen: med
+arket åpent og «tastaturet» oppe ga ekte hjulscroll på bakgrunnen `scrollY: 0`,
+og arket scrollet pent internt. Det er nettopp derfor feilen er lett å
+«bortverifisere» på en PC — diagnosen under bygger på observasjonen på telefon
+pluss det koden faktisk gjør, ikke på en kjøring.
+
+To ting i koden peker samme vei, og de forsterker hverandre:
+
+1. **`lockBodyScroll()` setter `overflow: hidden` på `<body>`, men scrolleren er
+   `<html>.`** Bekreftet: `document.scrollingElement` er `html`, og både
+   `html` og `body` har `overflow: visible` fra stilarket. iOS-Safari er kjent
+   for å ignorere `overflow: hidden` for berøringsscroll uansett — det er
+   selve grunnen til at «position: fixed på body»-trikset finnes. Chromium
+   respekterer den, så låsen ser ut til å virke overalt unntatt der den
+   trengs.
+2. **`max-height: 85vh` på arket krymper ikke når tastaturet kommer opp.** På
+   iOS er `vh` den *store* viewporten. Med tastaturet oppe er arket fortsatt
+   dimensjonert for hele skjermhøyden mens bare rundt 40 % er synlig, så
+   knappene havner langt under kanten. Bekreftet at det er noe å scrolle til:
+   med 344px synlig var siden bak fortsatt 653px høy.
+
+Sammen blir det slik brukeren beskriver: arket er høyere enn det synlige
+området, siden bak lar seg dra, og da glir arket ut av bildet.
+
+**Fiksen er to små ting**, begge velkjente:
+- Bytt låsen til `position: fixed` på `body` med `top: -scrollY`, og legg
+  scrollposisjonen tilbake ved lukking. Det er den eneste låsen iOS
+  respekterer.
+- `max-height: 85dvh` med `85vh` som reserve foran. `dvh` følger den
+  *dynamiske* viewporten og krymper når tastaturet kommer opp (iOS 16.4+).
+
+Berører alle fem dialogene, altså de samme inline-stilene som `#30` sin
+opprydning gjelder — de to bør gjøres i samme slengen.
+
+**Lav prioritet** (brukerens egen vurdering: «ikke viktig»), men den treffer
+påmeldingsdialogen, som er den ene alle deltakerne er innom.
+
 ### Funksjonalitet som mangler eller ville vært fint
 
 Sortert etter hva jeg tror betyr mest for et faktisk arrangement.
