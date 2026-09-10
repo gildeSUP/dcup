@@ -8,7 +8,7 @@
 <meta name="robots" content="noindex, nofollow" />
 <title>dCup</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg?v=1" />
-<link rel="stylesheet" href="dcup.css?v=22">
+<link rel="stylesheet" href="dcup.css?v=23">
 </head>
 <body>
 
@@ -292,12 +292,12 @@
           <input type="text" id="t-player-input" placeholder="Navn…" maxlength="40" />
           <button class="btn btn-primary" onclick="addTPlayer()">Legg til</button>
         </div>
-        <div class="player-tags" id="t-player-list"></div>
         <div class="form-error" id="t-player-error"></div>
-        <!-- Alle som alt er med på eventet: hak av i stedet for å skrive
-             navnet på nytt. Skrivefeltet over er for folk som ikke finnes ennå. -->
+        <!-- Én liste, ikke to (#49). De som er med står øverst, resten under —
+             tidligere sto de samme navnene både som tagger her og som avhakede
+             rader rett under, som leste som en feil. Skrivefeltet over er for
+             folk som ikke finnes på eventet ennå; alle andre hakes av. -->
         <div id="t-people-pick" style="display:none;">
-          <div class="muted mt1 mb1" style="font-size:12px;font-weight:600;">Eller hak av blant deltakerne på eventet</div>
           <div id="t-people-list"></div>
         </div>
         <div class="row mt1">

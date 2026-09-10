@@ -402,6 +402,12 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
    otherwise force display:block + uppercase text, breaking the layout onto multiple lines. */
 label.signup-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 0.5px solid var(--border); cursor: pointer; text-transform: none; font-size: inherit; font-weight: normal; color: var(--text); letter-spacing: normal; margin-bottom: 0; }
 label.signup-row:last-child { border-bottom: none; }
+/* Gruppeoverskriftene i spillervalget (#49): «Med i turneringen» / «Ikke med».
+   Første overskrift har ingen luft over seg — den følger rett under feltet. */
+.pick-group-hdr { font-size: 12px; font-weight: 600; color: var(--text2);
+  text-transform: uppercase; letter-spacing: 0.04em; margin: 1rem 0 0.35rem; }
+.pick-group-hdr:first-child { margin-top: 0.75rem; }
+.pick-group-hdr .pick-count { color: var(--text3); font-weight: 500; }
 label.signup-row.locked { opacity: 0.45; cursor: default; }
 label.signup-row input { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--accent); }
 .join-icon { font-size: 20px; }

@@ -1200,61 +1200,78 @@ function renderTPlayers() {
   document.getElementById('t-count').textContent = (tState.players||[]).length;
   const minEl = document.getElementById('t-min');
   if (minEl) minEl.textContent = MIN_GROUP;
-  // Navnet, ikke indeksen: lista tegnes på nytt ved hvert snapshot, så en
-  // bakt-inn indeks kunne bety en annen person i det fingeren treffer.
-  // Indeksen slås opp når hendelsen skjer — samme mønster som poengtavla (#9).
-  const list = document.getElementById('t-player-list');
-  list.innerHTML = '';
-  (tState.players||[]).forEach(name => {
-    const tag = document.createElement('div');
-    tag.className = 'player-tag';
-    tag.append(name);                       // textContent, aldri innerHTML
-    const btn = document.createElement('button');
-    btn.textContent = '×';
-    btn.title = `Fjern ${name}`;
-    btn.addEventListener('click', () => {
-      const i = (tState.players||[]).indexOf(name);
-      if (i === -1) { showToast('Spilleren er alt fjernet'); return; }
-      removeTPlayer(i);
-    });
-    tag.append(btn);
-    list.append(tag);
-  });
   renderTPeoplePick();
 }
 
-// Hakeliste over alle som er med på eventet. Skrivefeltet over dekker bare den
-// som ikke finnes ennå — den som alt er registrert skulle slippe å skrive
-// navnet sitt på nytt for hver konkurranse, og et navn skrevet litt annerledes
-// («Ola» mot «Ola Nordmann») ble en ny person med egen rad i deltakerlista.
+// Hakelista over hvem som er med i turneringen — den eneste lista i oppsettet
+// etter #49. De som er med står øverst under sin egen overskrift, resten under
+// «Ikke med», så man ser på ett blikk hvem som spiller *denne* konkurransen
+// selv om eventet har mange deltakere.
+//
+// Skrivefeltet over dekker bare den som ikke finnes på eventet ennå. Den som
+// alt er registrert skal slippe å skrive navnet sitt på nytt for hver
+// konkurranse — et navn skrevet litt annerledes («Ola» mot «Ola Nordmann») ble
+// ellers en ny person med egen rad i deltakerlista.
 function renderTPeoplePick() {
   const wrap = document.getElementById('t-people-pick');
   const list = document.getElementById('t-people-list');
   if (!wrap || !list) return;
-  const people = Object.values(eventPeople).sort((a,b)=>(a.joined||0)-(b.joined||0));
-  wrap.style.display = people.length ? 'block' : 'none';
-  if (!people.length) { list.innerHTML = ''; return; }
-  const inT = new Set(tState.players || []);
+
+  // Unionen av eventets deltakere og turneringens spillere. Et navn som nettopp
+  // ble skrevet inn ligger i players med en gang, men i people/ først når
+  // snapshotet lander — uten unionen ville det forsvunnet i mellomtiden, og det
+  // var taggene som dekket det før.
+  const joinedBy = new Map();
+  Object.values(eventPeople).forEach(p => joinedBy.set(p.name, p.joined || 0));
+  (tState.players || []).forEach(n => { if (!joinedBy.has(n)) joinedBy.set(n, Infinity); });
+
+  wrap.style.display = joinedBy.size ? 'block' : 'none';
   list.innerHTML = '';
-  people.forEach(p => {
+  if (!joinedBy.size) return;
+
+  // Stabil sortering: påmeldingstidspunkt, så navn. Uten det siste leddet
+  // hopper rader rundt under fingeren hver gang noen andre melder seg på.
+  // (Infinity minus Infinity er NaN, derfor ulikhetssjekken først.)
+  const cmp = (a, b) => (a.joined !== b.joined ? a.joined - b.joined
+                                               : a.name.localeCompare(b.name, 'no'));
+  const inT = new Set(tState.players || []);
+  const alle = [...joinedBy].map(([name, joined]) => ({ name, joined }));
+  const med = alle.filter(p => inT.has(p.name)).sort(cmp);
+  const ikkeMed = alle.filter(p => !inT.has(p.name)).sort(cmp);
+
+  const overskrift = (tekst, antall) => {
+    const h = document.createElement('div');
+    h.className = 'pick-group-hdr';
+    h.append(tekst + ' ');
+    const n = document.createElement('span');
+    n.className = 'pick-count';
+    n.append('(' + antall + ')');
+    h.append(n);
+    list.append(h);
+  };
+
+  const rad = name => {
     const row = document.createElement('label');
     row.className = 'signup-row';
     const box = document.createElement('input');
     box.type = 'checkbox';
-    box.checked = inT.has(p.name);
+    box.checked = inT.has(name);
     // Navnet leses fra closure, ikke fra en indeks: lista tegnes på nytt ved
     // hvert snapshot, så en indeks kunne peke på en annen person i det
-    // fingeren treffer. Samme mønster som spillertaggene og poengtavla (#9).
-    box.addEventListener('change', () => toggleTPerson(p.name, box.checked));
+    // fingeren treffer. Samme mønster som poengtavla (#9).
+    box.addEventListener('change', () => toggleTPerson(name, box.checked));
     const info = document.createElement('span');
     info.className = 'join-info';
     const txt = document.createElement('span');
     txt.className = 'join-name-txt';
-    txt.append(p.name);                     // textContent, aldri innerHTML
+    txt.append(name);                       // textContent, aldri innerHTML
     info.append(txt);
     row.append(box, info);
     list.append(row);
-  });
+  };
+
+  if (med.length) { overskrift('Med i turneringen', med.length); med.forEach(p => rad(p.name)); }
+  if (ikkeMed.length) { overskrift('Ikke med', ikkeMed.length); ikkeMed.forEach(p => rad(p.name)); }
 }
 
 function toggleTPerson(name, join) {

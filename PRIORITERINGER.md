@@ -678,35 +678,34 @@ Sortert etter hva jeg tror betyr mest for et faktisk arrangement.
 
 ## Besluttet under eventet 10. september — gjøres ETTER
 
-### 49. Deltakerne vises to ganger i turneringsoppsettet
+### 49. ✅ Fikset — én liste i turneringsoppsettet
 
-Oppsettskjermen viser spillerne som tagger (`#t-player-list`) og rett under som
-avhakingsliste (`#t-people-list`). Etter `525d0b3` skriver alle veier inn i en
-turnering til `people/`, så **lista er nå et supersett av taggene**: hvert navn
-med en tagg har også en avhaket rad rett under. Taggene forteller ingenting
-lista ikke allerede sier, og på telefon leser det som en feil.
+Oppsettskjermen viste spillerne som tagger *og* rett under som avhakingsliste.
+Etter `525d0b3` skriver alle veier inn i en turnering til `people/`, så lista
+var blitt et supersett av taggene: hvert navn med en tagg hadde også en avhaket
+rad rett under. Det leste som en feil på telefon.
 
-**Valgt løsning (avklart med bruker): sorter de avhakede øverst i lista, og
-fjern taggene.** Det løser dobbeltvisningen *og* oversiktsproblemet — med 25
-navn på eventet må man ellers scanne hele lista for å se hvem som er med i
-akkurat denne konkurransen, som er nettopp det taggene svarte på. Teksten
-«Eller hak av blant deltakerne på eventet» blir også riktigere når de som alt
-er med står først.
+**Nå:** taggene er borte, og lista er delt i to grupper — «MED I TURNERINGEN
+(n)» øverst, «IKKE MED (n)» under. Da ser man på ett blikk hvem som spiller
+akkurat denne konkurransen, også når eventet har mange deltakere. Å hake av
+eller på flytter raden mellom gruppene.
 
-To alternativer ble vurdert og valgt bort: bare fjerne taggene (mister
-oversikten ved mange deltakere), og å skjule lista bak «Legg til fra eventet ▾»
-(beholder to lister).
+Tre ting det var verdt å passe på, alle løst og testet:
+- **Lista bygges på unionen** av `eventPeople` og `tState.players`. Et navn som
+  nettopp ble skrevet inn ligger i `players` med en gang, men i `people/` først
+  når snapshotet lander — uten unionen ville det forsvunnet i mellomtiden, og
+  det var nettopp taggene som dekket det hullet før.
+- **`t-count` er urørt.** Den styrer om man kan starte.
+- **Sorteringen er stabil:** `joined`, så navn. Uten det siste leddet hopper
+  rader rundt under fingeren hver gang noen andre melder seg på.
 
-**Pass på ved implementasjon:**
-- Lista skjules når eventet ikke har noen deltakere ennå
-  (`wrap.style.display = people.length ? 'block' : 'none'`). Da er taggene i
-  dag det eneste som finnes. Ved første turnering på et tomt event må det
-  fortsatt gå an å se hvem man har skrevet inn.
-- `t-count` («Lagt til: N spillere») er det som styrer om man kan starte, og
-  må bli stående.
-- Sorteringen må være stabil: de avhakede først, deretter resten, begge
-  gruppene på `joined` som i dag. Ellers hopper rader rundt under fingeren
-  hver gang noen andre melder seg på.
+`removeTPlayer` er ikke lenger i bruk fra UI-et (avhakingen går via
+`toggleTPerson`), men står igjen som motstykket til `addTPlayer`.
 
-**Utsatt bevisst:** besluttet midt under eventet, og en push går rett på
-nettsiden. Kosmetisk, ikke en feil.
+**Verifisert** med 18 sjekker: at taggene er borte fra DOM-en, at lista er
+skjult på et tomt event, at et nyskrevet navn vises *før* snapshotet lander, at
+gruppene og tallene stemmer, at av- og påhaking flytter raden riktig vei og
+oppdaterer `players`, at ingen eksisterende rad bytter plass når en ny person
+melder seg på, at «Tøm» flytter alle ned, og at turneringen fortsatt lar seg
+starte. Sett i både lys og mørk modus. `dcup.css` er bumpet til v=23.
+
