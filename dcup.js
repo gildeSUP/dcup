@@ -1415,18 +1415,48 @@ async function startTournament() {
 // players beholder enkeltpersonene. Lagene ligger bare i groups, slik at
 // deltakerlista på eventet fortsatt inneholder folk og ikke lagnavn.
 const TEAM_SEP = ' / ';
-function teamCount(n) { return Math.floor(n / 2); }
 
-// Med et oddetall får det siste laget tre spillere. Alternativet er å la noen
-// stå utenfor, og det er verre på en firmafest enn en skjev trio.
+// Et oddetall gir ett lag ekstra: den siste spilleren får en makker som alt er
+// på et lag. 9 personer blir altså 5 lag, ikke 4.
+function teamCount(n) { return n < 2 ? 0 : (n % 2 ? Math.floor(n / 2) + 1 : n / 2); }
+
+// Ved oddetall er én spiller med på to lag («jokeren»). Alternativet — et lag
+// med tre — betyr at noen sitter over i hver kamp, og det er dårligere når man
+// først spiller double.
+//
+// De to lagene jokeren er med på møtes én gang. Da kan hun ikke spille mot seg
+// selv, og kampen spilles som en singlekamp mellom de to andre. Begge lagene
+// får dermed like mange kamper som alle andre, og tabellen forblir jevn.
+// sharedPlayer() finner den kampen igjen ved rendring.
 function makeTeams(players) {
   const rest = shuffle(players);
-  const pairs = teamCount(rest.length);
-  if (!pairs) return [];
+  if (rest.length < 2) return [];
+  const pairs = Math.floor(rest.length / 2);
   const teams = [];
   for (let i = 0; i < pairs; i++) teams.push([rest[2 * i], rest[2 * i + 1]]);
-  for (let i = pairs * 2; i < rest.length; i++) teams[teams.length - 1].push(rest[i]);
+  if (rest.length % 2) {
+    // Jokeren trekkes blant dem som alt har et lag, så paret blir tilfeldig.
+    const joker = rest[rest.length - 1];
+    const makker = rest[Math.floor(Math.random() * pairs * 2)];
+    teams.push([makker, joker]);
+  }
   return teams.map(t => t.join(TEAM_SEP));
+}
+
+// Navnet som går igjen i begge lagnavnene, ellers null. Brukes til å merke
+// kampen som må spilles som single.
+function sharedPlayer(a, b) {
+  if (!a || !b) return null;
+  const bs = String(b).split(TEAM_SEP);
+  return String(a).split(TEAM_SEP).find(n => bs.includes(n)) || null;
+}
+
+// De to som faktisk skal spille når lagene deler en spiller.
+function soloPair(a, b) {
+  const felles = sharedPlayer(a, b);
+  if (!felles) return null;
+  const ut = n => String(n).split(TEAM_SEP).filter(x => x !== felles).join(TEAM_SEP);
+  return { felles, hjemme: ut(a), borte: ut(b) };
 }
 
 let startPlayers = [];
@@ -1491,6 +1521,7 @@ function renderStartDialog() {
   const dblRow = document.getElementById('start-double-row');
   const dblBox = document.getElementById('start-double');
   const nokTilDouble = allowedGroups(teamCount(folk)).length > 0;
+  const joker = startDouble && folk % 2 === 1;
   dblRow.style.display = folk >= 4 ? 'flex' : 'none';
   dblBox.checked = startDouble;
   dblBox.disabled = !nokTilDouble && !startDouble;
@@ -1498,11 +1529,12 @@ function renderStartDialog() {
   document.getElementById('start-double-sub').textContent = !nokTilDouble
     ? `Trenger minst ${MIN_GROUP * 2} deltakere`
     : folk % 2
-      ? `${folk} deltakere → ${teamCount(folk)} lag, ett av dem med tre`
+      ? `${folk} deltakere → ${teamCount(folk)} lag. Én spiller er med på to lag; `
+        + 'den ene kampen spilles som single mellom de to andre'
       : `${folk} deltakere → ${teamCount(folk)} lag`;
 
-  document.getElementById('start-sub').textContent = only
-    ? `${n} ${enhet} · ${allowed[0]} gruppe · ${matchCount(n, allowed[0])} kamper — start?`
+  document.getElementById('start-sub').textContent = only || joker
+    ? `${n} ${enhet} · 1 gruppe · ${matchCount(n, 1)} kamper — start?`
     : startDouble ? `${folk} deltakere · ${n} lag` : `${n} deltakere er påmeldt`;
 
   // Navnene, ikke bare tallet: dette er siste sjanse til å se at noen mangler
@@ -1511,8 +1543,12 @@ function renderStartDialog() {
 
   // 3 vises ikke i det hele tatt — den er sperret av designet, ikke av antallet.
   // De andre vises deaktivert med grunn, ellers ser knappen bare ødelagt ut.
-  document.getElementById('start-choice-group').style.display = only ? 'none' : 'block';
-  if (!only) {
+  // Ved joker holdes alt i én gruppe. Med flere grupper kan jokerens to lag
+  // havne hver sin vei og møtes igjen i finalen — og en finale som må spilles
+  // som single er ikke en finale.
+  if (joker && startChoice !== 1) startChoice = 1;
+  document.getElementById('start-choice-group').style.display = only || joker ? 'none' : 'block';
+  if (!only && !joker) {
     document.getElementById('start-choice-grid').innerHTML = ALLOWED_GROUPS.map(g => {
       const ok = allowed.includes(g);
       const need = g * MIN_GROUP;
@@ -2283,12 +2319,17 @@ function renderTournamentView() {
       else if(r.winner==='b') badge=`<span class="fix-badge res-b">${escapeHTML(f[1])} vinner</span>`;
       else if(r.winner==='draw') badge=`<span class="fix-badge res-d">Uavgjort</span>`;
       else badge=`<span class="fix-badge res-none">Trykk for å registrere</span>`;
-      return `<div class="fixture-row" onclick="openMatchDialog(${gi},${i})">
+      // Jokerkampen: lagene deler en spiller, så den spilles som single
+      // mellom de to andre. Resultatet føres fortsatt på lagene.
+      const solo = soloPair(f[0], f[1]);
+      return `<div class="fixture-row${solo?' has-solo':''}" onclick="openMatchDialog(${gi},${i})">
         <span class="fix-num">${i+1}.</span>
         <span class="fix-team r">${escapeHTML(f[0])}</span>
         <span class="fix-vs">vs</span>
         <span class="fix-team">${escapeHTML(f[1])}</span>
         ${badge}
+        ${solo ? `<span class="fix-solo">${escapeHTML(solo.felles)} er på begge lag — spilles som `
+          + `${escapeHTML(solo.hjemme)} mot ${escapeHTML(solo.borte)}</span>` : ''}
       </div>`;
     }).join('');
     return `<div class="card">
@@ -2610,6 +2651,11 @@ function showMatchDialog(p1, p2, mode, onResult, r, scoreH, scoreA, hasScore, no
             <span class="match-dialog-vs">vs</span>
             <span>${escapeHTML(p2)}</span>
           </div>
+          ${(() => {
+            const solo = soloPair(p1, p2);
+            return solo ? `<div class="match-dialog-solo">${escapeHTML(solo.felles)} er på begge lag `
+              + `— spilles som <strong>${escapeHTML(solo.hjemme)} mot ${escapeHTML(solo.borte)}</strong></div>` : '';
+          })()}
           ${body}
           <button class="dialog-clear-btn" onclick="dlgClear()">Slett resultat</button>
         </div>
@@ -3303,7 +3349,10 @@ function renderDisplaySide(t) {
       ? queue.slice(0,DISP_QUEUE_MAX).map((m,i)=>`
           <div class="display-queue-item${i===0?' up-next':''}">
             <span class="display-queue-num">${i===0?'▶':i+1}</span>
-            <span class="display-queue-teams">${escapeHTML(m.f[0])}<span class="display-vs">vs</span>${escapeHTML(m.f[1])}</span>
+            <span class="display-queue-teams">${escapeHTML(m.f[0])}<span class="display-vs">vs</span>${escapeHTML(m.f[1])}${
+              (() => { const solo = soloPair(m.f[0], m.f[1]);
+                return solo ? `<span class="display-solo">single: ${escapeHTML(solo.hjemme)} mot ${escapeHTML(solo.borte)}</span>` : ''; })()
+            }</span>
             ${m.playoff
               ? `<span class="display-queue-grp po">${escapeHTML(m.label)}</span>`
               : `<span class="display-queue-grp g${m.gi}">${escapeHTML(groupName(t, m.gi))}</span>`}

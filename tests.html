@@ -283,9 +283,10 @@ eq('to grupper uten spilt finale gir ingen pall', podium(twoUnfinished), null);
 section('double');
 const folk8 = ['a','b','c','d','e','f','g','h'];
 eq('8 deltakere gir 4 lag', teamCount(8), 4);
-eq('7 deltakere gir 3 lag', teamCount(7), 3);
-eq('5 deltakere gir 2 lag', teamCount(5), 2);
-eq('3 deltakere gir 1 lag', teamCount(3), 1);
+eq('9 deltakere gir 5 lag (joker)', teamCount(9), 5);
+eq('7 deltakere gir 4 lag (joker)', teamCount(7), 4);
+eq('6 deltakere gir 3 lag', teamCount(6), 3);
+eq('5 deltakere gir 3 lag (joker)', teamCount(5), 3);
 eq('1 deltaker gir ingen lag', teamCount(1), 0);
 
 const t8 = makeTeams(folk8);
@@ -293,16 +294,22 @@ eq('4 lag av 8', t8.length, 4);
 ok('alle åtte er med, ingen dublett',
    new Set(t8.flatMap(t => t.split(TEAM_SEP))).size === 8);
 ok('alle lag har to spillere', t8.every(t => t.split(TEAM_SEP).length === 2));
+ok('ingen deler spiller ved partall',
+   t8.every((a,i) => t8.every((b,j) => i===j || !sharedPlayer(a,b))));
 
-// Oddetall: siste lag får tre, ingen står utenfor
+// Oddetall: én spiller er med på to lag, ingen lag har tre
+const t9 = makeTeams(['a','b','c','d','e','f','g','h','i']);
+eq('9 deltakere blir 5 lag', t9.length, 5);
+ok('alle lag har nøyaktig to', t9.every(t => t.split(TEAM_SEP).length === 2));
+ok('alle ni er med', new Set(t9.flatMap(t => t.split(TEAM_SEP))).size === 9);
+const delte9 = t9.flatMap((a,i) => t9.slice(i+1).map(b => sharedPlayer(a,b))).filter(Boolean);
+eq('nøyaktig ett lagpar deler en spiller', delte9.length, 1);
+
 const t7 = makeTeams(['a','b','c','d','e','f','g']);
-eq('7 deltakere blir 3 lag', t7.length, 3);
-eq('størrelsene er 2 + 2 + 3', t7.map(t => t.split(TEAM_SEP).length).sort(), [2,2,3]);
+eq('7 deltakere blir 4 lag', t7.length, 4);
 ok('alle sju er med', new Set(t7.flatMap(t => t.split(TEAM_SEP))).size === 7);
-
-const t5 = makeTeams(['a','b','c','d','e']);
-eq('5 deltakere blir 2 lag', t5.map(t => t.split(TEAM_SEP).length).sort(), [2,3]);
-ok('alle fem er med', new Set(t5.flatMap(t => t.split(TEAM_SEP))).size === 5);
+eq('også her deler nøyaktig ett par',
+   t7.flatMap((a,i) => t7.slice(i+1).map(b => sharedPlayer(a,b))).filter(Boolean).length, 1);
 
 eq('for få til et lag gir ingenting', makeTeams(['a']), []);
 eq('tom liste gir ingenting', makeTeams([]), []);
@@ -311,6 +318,22 @@ eq('tom liste gir ingenting', makeTeams([]), []);
 const par = new Set();
 for (let i = 0; i < 60; i++) par.add(makeTeams(folk8)[0]);
 ok('sammensetningen varierer mellom trekninger', par.size > 1);
+
+// sharedPlayer / soloPair
+eq('sharedPlayer finner den felles', sharedPlayer('X / A', 'X / B'), 'X');
+eq('og null når de er uavhengige', sharedPlayer('A / B', 'C / D'), null);
+eq('soloPair gir de to som skal spille',
+   soloPair('X / A', 'X / B'), { felles:'X', hjemme:'A', borte:'B' });
+eq('soloPair er null for vanlige kamper', soloPair('A / B', 'C / D'), null);
+
+// Jokerkampen finnes, og alle lag får like mange kamper
+const kamper = roundRobin(t9);
+eq('5 lag gir 10 kamper', kamper.length, 10);
+eq('nøyaktig én av dem er en jokerkamp',
+   kamper.filter(f => sharedPlayer(f[0], f[1])).length, 1);
+const antall = {}; t9.forEach(t => antall[t] = 0);
+kamper.forEach(f => { antall[f[0]]++; antall[f[1]]++; });
+ok('alle lag spiller like mange kamper', Object.values(antall).every(x => x === 4));
 
 // Lagnavn skal aldri bli personer i deltakerlista
 const dblT = { doubles: true, players: ['a','b','c','d'],

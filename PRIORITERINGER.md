@@ -726,15 +726,32 @@ kamper, tabell, sluttspill og TV.
 - **Lagene settes sammen inne i `confirmStart`-transaksjonen**, av den ferske
   lista fra serveren. En påmelding som lander mens dialogen står åpen er dermed
   med i trekningen.
-- **Oddetall gir ett lag med tre.** Alternativet er å la noen stå utenfor, som
-  er verre på en firmafest. Dialogen sier det før man trykker start.
+- **Oddetall gir en joker på to lag** (endret på bestilling under eventet).
+  9 deltakere blir 5 lag, ikke 4: den siste spilleren får en makker som alt er
+  på et lag. Alle lag har dermed nøyaktig to spillere, og ingen sitter over.
+
+  De to lagene jokeren er med på møtes én gang. Da kan hun ikke spille mot seg
+  selv, og **kampen spilles som en singlekamp mellom de to andre** — resultatet
+  føres fortsatt på lagene. Slik får alle lag like mange kamper (4 av 4 med 5
+  lag), og tabellen forblir jevn. Varianten som ble vurdert først — å hoppe over
+  kampen — ga tre lag med fire kamper og to med tre, altså en skjev tabell.
+
+  `sharedPlayer()`/`soloPair()` finner kampen igjen ved rendring, og den er
+  merket i kamplista, i kampdialogen og i køen på liveskjermen: «B er på begge
+  lag — spilles som I mot H».
+
+  **Joker låser turneringen til én gruppe.** Med flere grupper kunne jokerens
+  to lag havnet hver sin vei og møttes igjen i finalen, og en finale som må
+  spilles som single er ingen finale. Med én gruppe finnes det ikke sluttspill,
+  så konflikten kan bare oppstå den ene gangen.
 - **Alt som gjelder gruppestørrelse regnes på antall lag**, ikke personer: 8
   deltakere er 4 lag, altså 1 eller 2 grupper. Under 6 deltakere er avhakingen
   sperret med begrunnelse, og «Start» deaktiveres hvis ingen gruppetall går opp.
 
-**Verifisert** med 18 enhetstester (lagbygging for partall og oddetall, at alle
-er med, at sammensetningen varierer mellom trekninger, og at
-`namesInTournament` ser personene og ikke lagene) og 20 sjekker i nettleser:
+**Verifisert** med 29 enhetstester (lagbygging for partall og oddetall, at alle
+er med, at nøyaktig ett lagpar deler en spiller, at alle lag får like mange
+kamper, at sammensetningen varierer mellom trekninger, `sharedPlayer`/`soloPair`,
+og at `namesInTournament` ser personene og ikke lagene) og 31 sjekker i nettleser:
 dialogteksten, at gruppevalget følger lagtallet, selve trekningen, at
 deltakerlista ikke får lagnavn etter at backfillen har gått, kamper, tabell,
 TV, oddetallstilfellet og sperren ved for få deltakere.
