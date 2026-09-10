@@ -34,6 +34,8 @@ function anyDialogOpen() {
 // Tilbake lukker en åpen dialog i stedet for å navigere — det er det folk
 // forventer, og ellers forsvinner hele skjermen bak dialogen.
 window.addEventListener('popstate', e => {
+  // Oppføringen vi selv nettopp spiste da en dialog ble lukket med knapp
+  if (selfBack) { selfBack = false; return; }
   closingFromPopstate = true;
   const closed = closeTopDialog();
   closingFromPopstate = false;
@@ -87,26 +89,57 @@ function pushDialogHistory() {
                       t: (history.state||{}).t }, '', window.location.href);
 }
 
+// Låsen bruker position:fixed, ikke overflow:hidden. Scrolleren er <html>, ikke
+// <body>, og iOS-Safari ignorerer overflow:hidden for berøringsscroll uansett —
+// det er selve grunnen til at dette trikset finnes. Chromium respekterer
+// overflow, så den gamle låsen virket overalt bortsett fra der den trengtes:
+// med tastaturet oppe kunne arket scrolles helt ut av bildet (#44).
+let scrollLockDepth = 0;
+let scrollLockY = 0;
+
 function lockBodyScroll() {
   pushDialogHistory();
-  document.body.style.overflow = 'hidden';
+  if (scrollLockDepth === 0) {
+    scrollLockY = window.scrollY || document.documentElement.scrollTop || 0;
+    const b = document.body.style;
+    b.position = 'fixed';
+    b.top = -scrollLockY + 'px';
+    b.left = '0';
+    b.right = '0';
+    b.width = '100%';
+    b.overflow = 'hidden';   // beholdt for nettlesere der den faktisk hjelper
+  }
+  scrollLockDepth++;
   // Sto det allerede en toast nederst da arket kom opp, havner den under
   // knappene — løft den samme vei som showToast gjør (P2 #32).
   const t = document.getElementById('toast');
   if (t && t.classList.contains('show')) t.classList.add('toast-top');
 }
+
 function unlockBodyScroll() {
-  document.body.style.overflow = '';
+  // Bare den siste lukkingen slipper låsen. Åpnes et ark oppå et annet, ville
+  // en tidlig opphevelse lest scrollY som 0 og sendt siden til toppen.
+  if (scrollLockDepth > 0) scrollLockDepth--;
+  if (scrollLockDepth === 0) {
+    const b = document.body.style;
+    b.position = ''; b.top = ''; b.left = ''; b.right = ''; b.width = ''; b.overflow = '';
+    // Legg scrollposisjonen tilbake — position:fixed nullstilte den
+    window.scrollTo(0, scrollLockY);
+  }
   // Ble dialogen lukket med en knapp, ligger dialogoppføringen fortsatt i
   // historikken. Da må den bort, ellers krever det ett ekstra tilbake-trykk
   // å komme videre. popstate setter flagget, siden oppføringen alt er spist.
   if (dialogHistoryDepth > 0 && !closingFromPopstate) {
     dialogHistoryDepth--;
+    // Vår egen back() fyrer popstate. Uten flagget tolket lytteren den som et
+    // tilbake-trykk og lukket arket under — å lukke det øverste lukket begge.
+    selfBack = true;
     history.back();
   } else if (dialogHistoryDepth > 0) {
     dialogHistoryDepth--;
   }
 }
+let selfBack = false;
 let closingFromPopstate = false;
 
 // Turneringsnøklene er UUID-er, så Firebase gir dem tilbake sortert på

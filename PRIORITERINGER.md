@@ -73,12 +73,11 @@ Det betyr at lista under deler seg i to.
 - [ ] **Hva ligger igjen etterpå?** Ingen sletting, ingen utløpstid. Basen
       vokser med hvert event og alt blir stående for alltid.
 
-### 35 og 36 — se «Kodegjennomgang 10. september» nederst
+### 35 og 36 — ✅ Fikset i `7f29fbc`
 
-To funn derfra hører hjemme her oppe, fordi de treffer selve eventet:
-**#35** uavgjort i en sluttspillkamp låser turneringen (kortet sier «Ferdig»
-uten at det finnes en vinner), og **#36** liveskjermen viser ikke sluttspillet
-i det hele tatt — TV-en sier «Alle kamper spilt» mens finalen gjenstår.
+Begge er lukket. Se «Kodegjennomgang 10. september» nederst for detaljene:
+uavgjort i en sluttspillkamp kan ikke lagres lenger og låser dermed ikke
+turneringen, og liveskjermen viser sluttspillkampene i køen.
 
 ---
 
@@ -164,7 +163,7 @@ for noe som ikke ble lagret. Nytt forsøk uten feil lykkes. Tre raske klikk på
 | 20 | ✅ Fikset. `<meta name="robots" content="noindex, nofollow">` | `index.html` |
 | 21 | ✅ Fikset. `exitDisplay` går til `?e=<dispEventId>` | `dcup.js` |
 | 22 | ✅ Fikset. `willRotate()` svarer på om det finnes en neste side eller turnering; `syncProgressBar()` (kalt ved hver rendring) skjuler baren når svaret er nei, og rotasjonen setter i gang animasjonen med en gang i stedet for etter første 12s-runde | `dcup.js` |
-| 23 | ◐ Delvis. `tests.html` har 89 tester over de rene funksjonene. Rendring og alt som rører Firebase er udekket — `renderTournamentView` er skrevet nesten helt om uten en eneste test | `tests.html` |
+| 23 | ◐ Delvis. `tests.html` har **183 tester** over de rene funksjonene. Rendring og alt som rører Firebase er fortsatt udekket — `renderTournamentView` er skrevet nesten helt om uten en eneste test. Nye seksjoner skal blokk-scopes (`{ ... }`): fila er én toppnivå-scope, og en navnekollisjon velter hele suiten stille, med «kjører…» stående i stedet for et resultat | `tests.html` |
 
 ---
 
@@ -563,47 +562,41 @@ skjult etterpå, ingen `alert`, ingen uhåndtert rejection.
   spillerlista: alt rendres som tekst, ingen `img`-tagg havner i DOM-et,
   ingen JS-feil. (Dekker ett av punktene i #34.)
 
-#### 44. Bunnarket kan scrolles vekk når tastaturet er oppe (rapportert på mobil)
+#### 44. ✅ Fikset mot diagnosen — må bekreftes på telefon
 
-**Rapportert av bruker på telefon:** trykker du i et felt i en dialog, scroller
-siden riktig — men så er det mulig å scrolle videre slik at arket forsvinner.
+**Var:** `lockBodyScroll()` satte `overflow: hidden` på `<body>`, men scrolleren
+er `<html>` — og iOS-Safari ignorerer `overflow: hidden` for berøringsscroll
+uansett. Samtidig krympet ikke `max-height: 85vh` når tastaturet kom opp, fordi
+`vh` er den *store* viewporten på iOS. Arket var dermed dimensjonert for hele
+skjermen mens rundt 40 % var synlig, siden bak lot seg dra, og arket gled ut av
+bildet.
 
-**Ikke reprodusert her.** Sandkassen har bare Chromium, og der virker låsen: med
-arket åpent og «tastaturet» oppe ga ekte hjulscroll på bakgrunnen `scrollY: 0`,
-og arket scrollet pent internt. Det er nettopp derfor feilen er lett å
-«bortverifisere» på en PC — diagnosen under bygger på observasjonen på telefon
-pluss det koden faktisk gjør, ikke på en kjøring.
+**Nå:** to endringer, begge velkjente.
+- Låsen bruker `position: fixed` på `<body>` med `top: -scrollY`, og legger
+  scrollposisjonen tilbake ved lukking. Det er den eneste låsen iOS respekterer.
+  `overflow: hidden` er beholdt for nettlesere der den faktisk hjelper.
+- `max-height: 85vh; max-height: 85dvh` på alle fem dialoger og på
+  `.match-dialog` (som manglet høydetak helt). `dvh` følger den dynamiske
+  viewporten og krymper med tastaturet, `vh` står først som reserve for iOS
+  under 16.4.
 
-To ting i koden peker samme vei, og de forsterker hverandre:
+**Fant en annen feil underveis:** låsen teller nå dybde, så et ark oppå et annet
+ikke slipper låsen for tidlig og sender siden til toppen. Da viste det seg at
+`unlockBodyScroll` sin `history.back()` (fra #42) fyrte `popstate`, som lukket
+arket under — å lukke det øverste lukket begge. Vår egen `back()` merkes nå med
+et flagg som lytteren hopper over.
 
-1. **`lockBodyScroll()` setter `overflow: hidden` på `<body>`, men scrolleren er
-   `<html>.`** Bekreftet: `document.scrollingElement` er `html`, og både
-   `html` og `body` har `overflow: visible` fra stilarket. iOS-Safari er kjent
-   for å ignorere `overflow: hidden` for berøringsscroll uansett — det er
-   selve grunnen til at «position: fixed på body»-trikset finnes. Chromium
-   respekterer den, så låsen ser ut til å virke overalt unntatt der den
-   trengs.
-2. **`max-height: 85vh` på arket krymper ikke når tastaturet kommer opp.** På
-   iOS er `vh` den *store* viewporten. Med tastaturet oppe er arket fortsatt
-   dimensjonert for hele skjermhøyden mens bare rundt 40 % er synlig, så
-   knappene havner langt under kanten. Bekreftet at det er noe å scrolle til:
-   med 344px synlig var siden bak fortsatt 653px høy.
+**Verifisert i Chromium (375px):** scrollet til 400, åpnet ark → `position:
+fixed`, `top: -400px`; forsøk på å scrolle bakgrunnen ga `scrollY: 0`; lukking
+la posisjonen tilbake på 400. Nøstet: to ark ga dybde 2, lukking av det øverste
+lot det nederste stå åpent med låsen intakt, og begge lukket ga 500 tilbake.
+#42-stiene holder fortsatt: tilbake lukker dialog uten å bytte skjerm, neste
+tilbake går til eventet.
 
-Sammen blir det slik brukeren beskriver: arket er høyere enn det synlige
-området, siden bak lar seg dra, og da glir arket ut av bildet.
-
-**Fiksen er to små ting**, begge velkjente:
-- Bytt låsen til `position: fixed` på `body` med `top: -scrollY`, og legg
-  scrollposisjonen tilbake ved lukking. Det er den eneste låsen iOS
-  respekterer.
-- `max-height: 85dvh` med `85vh` som reserve foran. `dvh` følger den
-  *dynamiske* viewporten og krymper når tastaturet kommer opp (iOS 16.4+).
-
-Berører alle fem dialogene, altså de samme inline-stilene som `#30` sin
-opprydning gjelder — de to bør gjøres i samme slengen.
-
-**Lav prioritet** (brukerens egen vurdering: «ikke viktig»), men den treffer
-påmeldingsdialogen, som er den ene alle deltakerne er innom.
+**⚠️ Ikke reprodusert eller bekreftet på iOS.** Sandkassen har bare Chromium,
+der den gamle låsen allerede virket. Fiksen er skrevet mot diagnosen, ikke mot
+en observert feil — **Christian må bekrefte på telefon** at arket ikke lenger
+kan scrolles vekk med tastaturet oppe.
 
 ### Funksjonalitet som mangler eller ville vært fint
 
