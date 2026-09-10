@@ -73,6 +73,13 @@ Det betyr at lista under deler seg i to.
 - [ ] **Hva ligger igjen etterpå?** Ingen sletting, ingen utløpstid. Basen
       vokser med hvert event og alt blir stående for alltid.
 
+### 35 og 36 — se «Kodegjennomgang 10. september» nederst
+
+To funn derfra hører hjemme her oppe, fordi de treffer selve eventet:
+**#35** uavgjort i en sluttspillkamp låser turneringen (kortet sier «Ferdig»
+uten at det finnes en vinner), og **#36** liveskjermen viser ikke sluttspillet
+i det hele tatt — TV-en sier «Alle kamper spilt» mens finalen gjenstår.
+
 ---
 
 ## P1 — reelle hull
@@ -359,3 +366,177 @@ en **annen** gruppe i første runde.
 
 Valget lagres i samme transaksjon som gruppene, så de aldri kan komme i utakt
 om noen melder seg på i samme øyeblikk.
+
+
+---
+
+## Kodegjennomgang 10. september
+
+Gjennomgang av hele `dcup.js` + utforskende testing i nettleser mot en mock.
+Alle de eksisterende testene (167 i `tests.html` + åtte browser-tester) var
+grønne før og etter. Alt under er **bekreftet kjørende**, ikke bare lest ut av
+koden, med mindre annet står.
+
+### Feil
+
+#### 35. 🔴 Uavgjort i en sluttspillkamp låser turneringen
+
+I `wdl`-modus (fotball, sjakk, hockey) viser sluttspillsdialogen
+«Uavgjort»-knappen, og i `score`-modus gir lik score `winner: 'draw'`. Begge
+deler lar seg lagre på en finale.
+
+Da skjer dette: `playoffWinner` returnerer `undefined` for et uavgjort
+resultat, så `podium()` blir `null` — ingen vinner, ingen pall, ingen
+avsløring på liveskjermen. Men `isFinished()` ser bare at `match_0.winner`
+finnes (`'draw'` er sant), så **kortet sier «Ferdig» uten at turneringen har
+en vinner**. Ingenting i UI-et forteller hvorfor.
+
+Bekreftet: sjakkturnering, gruppespill ferdig, «Uavgjort» i finalen →
+`podium()` = `null`, `isFinished()` = `true`, hintet sier fortsatt bare
+«Trykk på en kamp for å registrere resultat».
+
+Fiksen har to halvdeler: ikke tilby uavgjort i en sluttspillkamp (der må det
+kåres en vinner), og la `isFinished` kreve en faktisk vinner, ikke bare et
+resultat. Uavgjort-dialogen fra i går er forresten akkurat riktig mønster å
+sende folk videre til: «finalen endte likt — spill omkamp eller avgjør det».
+
+#### 36. 🔴 Liveskjermen viser ikke sluttspillet
+
+`renderDisplaySide` viser bare gruppekampene. Når gruppespillet er ferdig,
+står TV-en på «🏁 Alle kamper spilt / Ferdig» — også når semifinaler, bronse
+og finale gjenstår. Sluttspillet finnes ikke på storskjermen i det hele tatt;
+det neste som skjer der er at pallen plutselig spretter opp.
+
+Bekreftet på 1280×720: gruppespill ferdig, finale uspilt, og ordet «finale»
+forekommer ikke ett eneste sted i `#disp-content`.
+
+Dette ble mer synlig av #17 i går (turneringen er ikke lenger «ferdig» før
+finalen er spilt), men hullet har alltid vært der. Det er også den delen av
+kvelden folk faktisk samler seg rundt skjermen for.
+
+#### 37. Fjernet deltaker blir stående i en startet turnering
+
+`removePerson` kaller `setSignup(tid, navn, false)`, som bare rører
+`players`-lista. Er turneringen alt trukket, blir personen stående i
+`groups[].players`, i kampoppsettet og i resultatene.
+
+Bekreftet: fjernet en spiller som var i en trukket gruppe →
+`iPlayers: false`, `iDeltakerliste: false`, men `iGruppe: true`,
+`iKamper: true`, `iResultater: true`. De vises altså fortsatt i tabellen og i
+kampkøen på TV-en, samtidig som de ikke lenger er en deltaker og ikke kan
+omdøpes sentralt.
+
+Riktig oppførsel er neppe å rive dem ut av en pågående gruppe — det ville
+etterlate en gruppe med oddetall og resultater som peker på ingen. Men da må
+appen si fra: «X er med i en startet turnering og kan ikke fjernes derfra».
+
+#### 38. En slettet turnering gjenoppstår, og skjermen merker det ikke
+
+Ikke aktuelt i dag (det finnes ingen sletting), men det er en forutsetning
+for **P1 #10**, så det hører med her.
+
+Bekreftet ved å sette turneringsnoden til `null` mens en telefon sto inne i
+turneringen: skjermen ble stående med gamle data (`openTournament` sin lytter
+gjør `if (data)` og ignorerer `null`), og et påfølgende `tWrite` **gjenskapte
+turneringen i basen**. En sletting kan altså bli ugjort av hvem som helst som
+tilfeldigvis står på den skjermen.
+
+`#10` må derfor fikse begge deler: lytteren må reagere på at noden er borte
+(kaste deg tilbake til eventet med en beskjed), og `tWrite` må ikke skrive til
+en node som ikke finnes.
+
+#### 39. `openMatchDialog` kaster når kampen er borte
+
+`const f = fixtures[idx]` sjekkes ikke, og `fkey(f)` gjør `f[0]`. Bekreftet:
+`openMatchDialog(0, 99)` kaster `Cannot read properties of undefined
+(reading '0')`. Nås hvis noen nullstiller eller starter turneringen på nytt
+fra en annen telefon i det du trykker på en kamprad. Én linje: `if (!f) return;`
+(gjerne med en toast om at oppsettet er endret).
+
+#### 40. `removeTPlayer` har indeksen bakt inn i `onclick`
+
+`renderTPlayers` skriver `onclick="removeTPlayer(${i})"`. Lista tegnes på
+nytt ved hvert snapshot, så indeksen kan bety en annen person i det øyeblikket
+fingeren treffer. Poengtavla løste akkurat dette ved å slå opp
+`players.indexOf(navn)` når hendelsen skjer (se #9) — `renderTPlayers` er det
+siste stedet som ikke gjør det. Samme mønster som P0 #1 og #9.
+
+Vinduet er lite, men det er nettopp under påmelding — når alle legger til navn
+samtidig — at lista endrer seg under fingeren.
+
+#### 41. «Del link» feiler stille i innebygde nettlesere
+
+`copyEventLink` gjør `navigator.clipboard.writeText(url).then(...)` uten
+`catch`, og uten sjekk på at `navigator.clipboard` finnes. Bekreftet: uten
+`navigator.clipboard` kaster den `Cannot read properties of undefined
+(reading 'writeText')` og **brukeren får ingen beskjed i det hele tatt**.
+
+Dette er ikke teoretisk: `navigator.clipboard` mangler i en del innebygde
+nettlesere (Slack, Teams, Facebook, LinkedIn) — altså akkurat der en link til
+et firmaarrangement blir åpnet. Trenger en `catch` og en reserveløsning som
+viser linken slik at den kan markeres og kopieres manuelt.
+
+#### 42. Nettleserens tilbakeknapp kaster deg ut av eventet
+
+Appen bruker bare `history.replaceState`, aldri `pushState`. Bekreftet: står
+du inne i en turnering og trykker tilbake i nettleseren, havner du på
+**forsiden** (`screen-home`), ute av eventet — ikke på eventskjermen. Én gang
+til, og du er ute av siden.
+
+På telefon er tilbake den mest brukte bevegelsen som finnes. Folk kommer til å
+tro at de har mistet turneringen. Løsningen er `pushState` ved
+`openTournament` og en `popstate`-lytter som går tilbake til eventet (og som
+lukker en åpen dialog i stedet for å navigere, hvis en er oppe).
+
+#### 43. Ingen feilhåndtering eller ventetilstand når et event åpnes
+
+`loadEvent` gjør `await db.ref(...).once('value')` uten `try/catch`. Nekter
+reglene lesing — som er nøyaktig det #5/#34 handler om å risikere — blir det
+en uhåndtert rejection, og brukeren blir stående på forsiden uten et ord.
+Samme hvis nettet er tregt: det finnes ingen «Laster event…», bare en tom
+forside inntil svaret kommer.
+
+Med tjue telefoner som åpner linken samtidig på gjestenettet er dette det
+første folk vil oppleve hvis noe er galt.
+
+#### Fortsatt åpent fra før, som denne gjennomgangen bekrefter
+
+- **`addTPlayer`/`addBoardPlayer` skriver aldri til `people/`** (notert under
+  #29). En spiller lagt til i turneringsoppsettet finnes ikke i
+  deltakerlista, kan ikke omdøpes eller fjernes sentralt, og er ikke med i
+  forhåndsvalget for neste turnering. Nå som deltakerknappen med antall står
+  synlig i toppen, blir avviket lettere å legge merke til.
+- **XSS ser fortsatt lukket ut.** Testet med `O'Brien`,
+  `<img src=x onerror=alert(1)>`, `Ærlig Å` og et 40 tegns navn i
+  spillerlista: alt rendres som tekst, ingen `img`-tagg havner i DOM-et,
+  ingen JS-feil. (Dekker ett av punktene i #34.)
+
+### Funksjonalitet som mangler eller ville vært fint
+
+Sortert etter hva jeg tror betyr mest for et faktisk arrangement.
+
+1. **QR-kode til eventet på liveskjermen.** Den raskeste veien fra «folk står
+   i rommet» til «folk er påmeldt» er en kode på TV-en de kan skanne. I dag
+   må linken deles i en chat, og «Del link» er akkurat funksjonen som feiler
+   stille i innebygde nettlesere (#41). Hører sammen med #36: TV-en har god
+   plass når den først står der.
+2. **Sluttspillet på liveskjermen** (#36) — det er finalen folk samler seg om.
+3. **Flere baner samtidig.** Kampkøen antar at én kamp spilles av gangen
+   («▶ neste»). Har dere to bordtennisbord, stemmer ikke køen med
+   virkeligheten. Et valg for antall baner, og «spilles nå» med like mange
+   kamper, ville gjort køen riktig.
+4. **Del resultatet etterpå.** Når pallen er klar finnes det ingen måte å ta
+   den med seg — en «kopier resultat»-knapp som gir en ferdig tekstblokk til
+   Slack, eller et bilde av pallen.
+5. **Ikon og «legg til på hjemskjerm».** `index.html` har verken favicon,
+   `theme-color` eller manifest. Åpner tjue personer linken på telefonen, får
+   alle en tom fane uten ikon, og de som legger den på hjemskjermen får en
+   blank rute.
+6. **Angre et resultat.** Du kan åpne kampen på nytt og endre den, men det
+   finnes ingen historikk og ingen «hvem endret hva» — ved uenighet under et
+   arrangement er det ingen fasit å se tilbake på.
+7. **«Hva skjer med meg nå?»** En deltaker som åpner linken ser alle
+   turneringer og alle kamper. Et enkelt «du står for tur i …» ville spart
+   mye leting — men det forutsetter en form for «hvem er jeg», som er
+   bevisst valgt bort (se #24 og beslutningen om ingen falsk identitet).
+   Kan løses uten identitet: et søkefelt eller «trykk på navnet ditt».
