@@ -672,3 +672,41 @@ Sortert etter hva jeg tror betyr mest for et faktisk arrangement.
    mye leting — men det forutsetter en form for «hvem er jeg», som er
    bevisst valgt bort (se #24 og beslutningen om ingen falsk identitet).
    Kan løses uten identitet: et søkefelt eller «trykk på navnet ditt».
+
+
+---
+
+## Besluttet under eventet 10. september — gjøres ETTER
+
+### 49. Deltakerne vises to ganger i turneringsoppsettet
+
+Oppsettskjermen viser spillerne som tagger (`#t-player-list`) og rett under som
+avhakingsliste (`#t-people-list`). Etter `525d0b3` skriver alle veier inn i en
+turnering til `people/`, så **lista er nå et supersett av taggene**: hvert navn
+med en tagg har også en avhaket rad rett under. Taggene forteller ingenting
+lista ikke allerede sier, og på telefon leser det som en feil.
+
+**Valgt løsning (avklart med bruker): sorter de avhakede øverst i lista, og
+fjern taggene.** Det løser dobbeltvisningen *og* oversiktsproblemet — med 25
+navn på eventet må man ellers scanne hele lista for å se hvem som er med i
+akkurat denne konkurransen, som er nettopp det taggene svarte på. Teksten
+«Eller hak av blant deltakerne på eventet» blir også riktigere når de som alt
+er med står først.
+
+To alternativer ble vurdert og valgt bort: bare fjerne taggene (mister
+oversikten ved mange deltakere), og å skjule lista bak «Legg til fra eventet ▾»
+(beholder to lister).
+
+**Pass på ved implementasjon:**
+- Lista skjules når eventet ikke har noen deltakere ennå
+  (`wrap.style.display = people.length ? 'block' : 'none'`). Da er taggene i
+  dag det eneste som finnes. Ved første turnering på et tomt event må det
+  fortsatt gå an å se hvem man har skrevet inn.
+- `t-count` («Lagt til: N spillere») er det som styrer om man kan starte, og
+  må bli stående.
+- Sorteringen må være stabil: de avhakede først, deretter resten, begge
+  gruppene på `joined` som i dag. Ellers hopper rader rundt under fingeren
+  hver gang noen andre melder seg på.
+
+**Utsatt bevisst:** besluttet midt under eventet, og en push går rett på
+nettsiden. Kosmetisk, ikke en feil.
