@@ -796,6 +796,15 @@ function openTournament(id) {
   tRef = db.ref('events/'+currentEventId+'/tournaments/'+id);
   tRef.on('value', snap => {
     const data = snap.val();
+    // Uten denne grenen ble skjermen stående med gamle data når turneringen ble
+    // slettet, og neste tWrite gjenskapte den i basen — en sletting kunne bli
+    // ugjort av hvem som helst som tilfeldigvis sto på skjermen. backToEvent
+    // nuller tRef, og det er det som hindrer at update() oppretter noden igjen.
+    if (data === null) {
+      showToast('Turneringen er slettet');
+      backToEvent();
+      return;
+    }
     if (data) {
       tState = data;
       renderTournamentView();
@@ -809,6 +818,7 @@ function openTournament(id) {
 
 function backToEvent() {
   if (tRef) tRef.off();
+  tRef = null;   // hindrer at tWrite gjenskaper en slettet turnering, se #38
   currentTId = null;
   updateEventURL(currentEventId);
   showScreen('screen-event');
@@ -1230,7 +1240,9 @@ function isFinished(t) {
   // merket aldri kommet. Finalen har alltid nøkkelen match_0.
   if (groupsOf(t).length > 1) {
     const final = (t.playoffResults || {})['match_0'];
-    if (!final || !final.winner) return false;
+    // 'draw' er et resultat, men ingen vinner. Uten dette sto kortet «Ferdig»
+    // på en turnering der podium() var null — ferdig uten vinner.
+    if (!final || !final.winner || final.winner === 'draw') return false;
   }
   return true;
 }
@@ -1899,9 +1911,12 @@ function renderTournamentView() {
   const pm = playoffMatches(tState);
   const pr = tState.playoffResults || {};
   const hint = document.getElementById('t-playoff-hint');
-  if (hint) hint.textContent = pm.length
-    ? 'Trykk på en kamp for å registrere resultat'
-    : 'Én gruppe — vinneren er den som topper tabellen.';
+  const drawnFinal = (pr['match_0'] || {}).winner === 'draw';
+  if (hint) hint.textContent = !pm.length
+    ? 'Én gruppe — vinneren er den som topper tabellen.'
+    : drawnFinal
+      ? 'Finalen står likt — den må avgjøres før turneringen har en vinner.'
+      : 'Trykk på en kamp for å registrere resultat';
 
   document.getElementById('t-playoff-matches').innerHTML = pm.map(m=>{
     const r = pr[m.key] || {};
@@ -2087,11 +2102,13 @@ function openPlayoffDialog(key) {
         : { winner, loser, home: m.home, away: m.away, homeScore: hs, awayScore: as_, ts: Date.now() };
       tWrite({ ['playoffResults/' + key]: value });
     },
-    r, scoreH, scoreA, hasScore
+    r, scoreH, scoreA, hasScore, true   // sluttspill: må kåre en vinner
   );
 }
 
-function showMatchDialog(p1, p2, mode, onResult, r, scoreH, scoreA, hasScore) {
+// noDraw: en sluttspillkamp må kåre en vinner. Uavgjort der ga et resultat uten
+// vinner, som låste turneringen i «Ferdig uten pall».
+function showMatchDialog(p1, p2, mode, onResult, r, scoreH, scoreA, hasScore, noDraw) {
   let sh = scoreH, sa = scoreA, hs = hasScore;
   const container = document.getElementById('match-dialog-container');
 
@@ -2117,7 +2134,7 @@ function showMatchDialog(p1, p2, mode, onResult, r, scoreH, scoreA, hasScore) {
       </div>
       <button class="score-save-btn" onclick="saveScore()">Lagre resultat</button>`;
     } else {
-      const wdl = mode==='wdl';
+      const wdl = mode==='wdl' && !noDraw;
       const selA = r.winner==='a', selD = r.winner==='draw', selB = r.winner==='b';
       body = `<div class="match-result-btns">
         <button class="match-result-btn ${selA?'sel-a':''}" onclick="dlgSetWinner('a')">
@@ -2186,6 +2203,10 @@ function showMatchDialog(p1, p2, mode, onResult, r, scoreH, scoreA, hasScore) {
     const hBest = scoreDirOf(tState)==='low' ? h<a : h>a;
     const aBest = scoreDirOf(tState)==='low' ? a<h : a>h;
     const winner=hBest?'a':aBest?'b':'draw', loser=hBest?p2:aBest?p1:null;
+    if (noDraw && winner === 'draw') {
+      showToast('Kampen må ha en vinner — kan ikke ende likt');
+      return;
+    }
     onResult(winner, loser, h, a);
     closeDlg();
   };
@@ -2742,6 +2763,28 @@ function renderDisplayTables(t, subset, offset) {
 
 // Høyre kolonne: siste resultat, og køen slik at folk ser når de selv skal spille
 const DISP_QUEUE_MAX = 6;
+// Køen fortsetter inn i sluttspillet. Før dette stoppet liveskjermen på
+// «Alle kamper spilt» mens semifinaler, bronse og finale gjensto — og det er
+// nettopp de kampene folk samler seg rundt skjermen for.
+// Kamper som venter på den foran tas ikke med: «Vinner av semi 1» er ingen kø.
+function playoffQueue(t) {
+  const pr = t.playoffResults || {};
+  return playoffMatches(t)
+    .filter(m => m.home !== undefined && m.away !== undefined)
+    .filter(m => { const r = pr[m.key]; return !r || !r.winner || r.winner === 'draw'; })
+    .map(m => ({ playoff: true, key: m.key, label: m.label, f: [m.home, m.away] }));
+}
+
+function lastPlayoffPlayed(t) {
+  const pr = t.playoffResults || {};
+  const played = playoffMatches(t)
+    .map(m => ({ m, r: pr[m.key] }))
+    .filter(x => x.r && x.r.winner);
+  if (!played.length) return null;
+  const best = played.reduce((a, b) => (b.r.ts || 0) >= (a.r.ts || 0) ? b : a);
+  return { playoff: true, label: best.m.label, f: [best.r.home, best.r.away], r: best.r };
+}
+
 function renderDisplaySide(t) {
   const order = playOrder(t);
   if (!order.length) return `<div class="display-card">
@@ -2749,14 +2792,22 @@ function renderDisplaySide(t) {
     <div class="display-result-line" style="opacity:0.3;">Ikke satt opp ennå</div>
   </div>`;
 
-  const last = lastPlayed(t);
-  const queue = order.filter(m=>!isPlayed(t,m));
+  const groupLast = lastPlayed(t);
+  const poLast = lastPlayoffPlayed(t);
+  // Nyeste av de to. Sluttspillet spilles sist, så uten dette ville skjermen
+  // vist en gruppekamp som «siste resultat» lenge etter finalen.
+  const last = !poLast ? groupLast
+    : !groupLast ? poLast
+    : ((poLast.r.ts || 0) >= (groupLast.r.ts || 0) ? poLast : groupLast);
+  const queue = order.filter(m=>!isPlayed(t,m)).concat(playoffQueue(t));
 
   const lastCard = `<div class="display-card">
     <div class="display-card-label">Siste resultat</div>
     ${last
       ? `<div class="display-result-line">${displayMatchLine(t,last.f,last.r)}</div>
-         <div class="display-card-sub">Gruppe ${escapeHTML(groupName(t, last.gi))} · ${order.length-queue.length} av ${order.length} spilt</div>`
+         <div class="display-card-sub">${last.playoff
+             ? escapeHTML(last.label)
+             : `Gruppe ${escapeHTML(groupName(t, last.gi))} · ${order.filter(m=>isPlayed(t,m)).length} av ${order.length} spilt`}</div>`
       : `<div class="display-result-line" style="opacity:0.3;">—</div>
          <div class="display-card-sub">Ingen kamper spilt ennå</div>`}
   </div>`;
@@ -2768,12 +2819,17 @@ function renderDisplaySide(t) {
           <div class="display-queue-item${i===0?' up-next':''}">
             <span class="display-queue-num">${i===0?'▶':i+1}</span>
             <span class="display-queue-teams">${escapeHTML(m.f[0])}<span class="display-vs">vs</span>${escapeHTML(m.f[1])}</span>
-            <span class="display-queue-grp g${m.gi}">${escapeHTML(groupName(t, m.gi))}</span>
+            ${m.playoff
+              ? `<span class="display-queue-grp po">${escapeHTML(m.label)}</span>`
+              : `<span class="display-queue-grp g${m.gi}">${escapeHTML(groupName(t, m.gi))}</span>`}
           </div>`).join('')
         + (queue.length>DISP_QUEUE_MAX
             ? `<div class="display-card-sub">+ ${queue.length-DISP_QUEUE_MAX} kamper etter dette</div>` : '')
-      : `<div class="display-result-line">🏁 Alle kamper spilt</div>
-         <div class="display-card-sub">${order.length} av ${order.length} ferdig</div>`}
+      : (t.playoffResults||{})['match_0'] && (t.playoffResults||{})['match_0'].winner === 'draw'
+        ? `<div class="display-result-line">Finalen står likt</div>
+           <div class="display-card-sub">Må avgjøres før turneringen har en vinner</div>`
+        : `<div class="display-result-line">🏁 Alle kamper spilt</div>
+           <div class="display-card-sub">${order.length} av ${order.length} ferdig</div>`}
   </div>`;
 
   return lastCard + queueCard;

@@ -384,6 +384,73 @@ eq('navnene kommer fra resultatet, ikke tabellen',
    podium({ ...t2, playoffResults:{ match_0:{ winner:'a', home:'Utenfor tabellen', away:'B1', loser:'B1' } } }).champion,
    'Utenfor tabellen');
 
+// ---------- #35: uavgjort i sluttspill ----------
+{  // blokk-scope: fila er én toppnivå-scope, og en navnekollisjon velter
+   // hele suiten stille — det skjedde tre ganger før dette ble innført
+section('#35 uavgjort i sluttspill');
+function twoGroupsDone(mode) {
+  const A=['A1','A2','A3'], B=['B1','B2','B3'];
+  const win = ps => { const o={}; roundRobin(ps).forEach(([h,a])=>{
+    const hw = ps.indexOf(h) < ps.indexOf(a);
+    o[fkey([h,a])] = { winner: hw?'a':'b', loser: hw?a:h, home:h, away:a }; }); return o; };
+  return { mode, groups:[
+    { name:'A', players:A, fixtures:roundRobin(A), results:win(A) },
+    { name:'B', players:B, fixtures:roundRobin(B), results:win(B) },
+  ], playoffResults:{} };
+}
+const drawnFinal = { ...twoGroupsDone('wdl'),
+  playoffResults: { match_0: { winner:'draw', home:'A1', away:'B1' } } };
+eq('uavgjort finale gir ingen pall', podium(drawnFinal), null);
+eq('uavgjort finale er IKKE ferdig', isFinished(drawnFinal), false);
+const decided = { ...twoGroupsDone('wdl'),
+  playoffResults: { match_0: { winner:'a', home:'A1', away:'B1', loser:'B1' } } };
+eq('avgjort finale er ferdig', isFinished(decided), true);
+eq('avgjort finale kårer vinneren', podium(decided).champion, 'A1');
+eq('uspilt finale er ikke ferdig', isFinished(twoGroupsDone('wdl')), false);
+eq('én gruppe er ferdig uten finale',
+   isFinished({ mode:'wl', groups:[{ name:'A', players:['x','y'], fixtures:[['x','y']],
+     results:{ [fkey(['x','y'])]:{winner:'a',home:'x',away:'y'} } }] }), true);
+}
+
+// ---------- #36: sluttspillet i køen på liveskjermen ----------
+{
+section('#36 sluttspill i liveskjermkøen');
+function played(ps) { const o={}; roundRobin(ps).forEach(([h,a])=>{
+  const hw = ps.indexOf(h) < ps.indexOf(a);
+  o[fkey([h,a])] = { winner: hw?'a':'b', loser: hw?a:h, home:h, away:a }; }); return o; }
+const grp = (name, ps) => ({ name, players:ps, fixtures:roundRobin(ps), results:played(ps) });
+const two = { mode:'wl', playoffResults:{}, groups:[grp('A',['A1','A2','A3']), grp('B',['B1','B2','B3'])] };
+
+eq('sluttspillkamper kommer i køen når gruppespillet er ferdig',
+   playoffQueue(two).map(m=>m.label), ['FINALE','3. PLASS','5. PLASS']);
+eq('køen bærer navnene', playoffQueue(two)[0].f, ['A1','B1']);
+eq('køen er merket som sluttspill', playoffQueue(two)[0].playoff, true);
+eq('spilt sluttspillkamp faller ut av køen',
+   playoffQueue({ ...two, playoffResults:{ match_0:{winner:'a',home:'A1',away:'B1',loser:'B1'} } })
+     .map(m=>m.label), ['3. PLASS','5. PLASS']);
+eq('uavgjort blir liggende i køen — den må avgjøres',
+   playoffQueue({ ...two, playoffResults:{ match_0:{winner:'draw',home:'A1',away:'B1'} } })
+     .map(m=>m.label), ['FINALE','3. PLASS','5. PLASS']);
+
+const four = { mode:'wl', playoffResults:{}, groups:
+  [['A1','A2','A3'],['B1','B2','B3'],['C1','C2','C3'],['D1','D2','D3']]
+    .map((ps,i)=>grp('ABCD'[i], ps)) };
+eq('bare semiene er klare først', playoffQueue(four).map(m=>m.label), ['SEMIFINALE 1','SEMIFINALE 2']);
+eq('finalen kommer i køen når semiene er spilt',
+   playoffQueue({ ...four, playoffResults:{
+     semi_0:{winner:'a',home:'A1',away:'B1',loser:'B1'},
+     semi_1:{winner:'a',home:'C1',away:'D1',loser:'D1'} } }).map(m=>m.label),
+   ['FINALE','BRONSE']);
+
+eq('uten spilt sluttspillkamp er siste resultat null', lastPlayoffPlayed(two), null);
+eq('siste sluttspillresultat plukkes ut', lastPlayoffPlayed(
+   { ...two, playoffResults:{ match_0:{winner:'a',home:'A1',away:'B1',loser:'B1',ts:5} } }).label, 'FINALE');
+eq('nyeste sluttspillresultat vinner', lastPlayoffPlayed(
+   { ...two, playoffResults:{
+     match_0:{winner:'a',home:'A1',away:'B1',loser:'B1',ts:5},
+     match_1:{winner:'a',home:'A2',away:'B2',loser:'B2',ts:9} } }).label, '3. PLASS');
+}
+
 // ---------- board ----------
 section('boardStandings');
 const board = { format:'board', scoreDir:'low', players:['Ola N.','Kari','Per','Ida'],
