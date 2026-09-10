@@ -545,7 +545,10 @@ function upsertPerson(name) {
 // ligger de i gruppene, ikke i players.
 function namesInTournament(t) {
   const out = new Set(t.players || []);
-  groupsOf(t).forEach(g => g.players.forEach(n => out.add(n)));
+  // Ved double består gruppene av lagnavn («Ola / Kari»), ikke personer.
+  // Uten dette ville backfillen lagd et lagnavn som egen rad i deltakerlista.
+  // Personene ligger uansett trygt i players.
+  if (!t.doubles) groupsOf(t).forEach(g => g.players.forEach(n => out.add(n)));
   Object.values(t.scores || {}).forEach(sc => { if (sc && sc.name) out.add(sc.name); });
   return out;
 }
@@ -1404,12 +1407,41 @@ async function startTournament() {
   showStartDialog(players);
 }
 
+// ===== DOUBLE =====
+// Deltakerne meldes på som enkeltpersoner, og settes sammen to og to først ved
+// trekningen. Lagene er selve deltakerne i turneringen — «Ola / Kari» er ett
+// navn hele veien gjennom grupper, kamper, tabell og pall.
+//
+// players beholder enkeltpersonene. Lagene ligger bare i groups, slik at
+// deltakerlista på eventet fortsatt inneholder folk og ikke lagnavn.
+const TEAM_SEP = ' / ';
+function teamCount(n) { return Math.floor(n / 2); }
+
+// Med et oddetall får det siste laget tre spillere. Alternativet er å la noen
+// stå utenfor, og det er verre på en firmafest enn en skjev trio.
+function makeTeams(players) {
+  const rest = shuffle(players);
+  const pairs = teamCount(rest.length);
+  if (!pairs) return [];
+  const teams = [];
+  for (let i = 0; i < pairs; i++) teams.push([rest[2 * i], rest[2 * i + 1]]);
+  for (let i = pairs * 2; i < rest.length; i++) teams[teams.length - 1].push(rest[i]);
+  return teams.map(t => t.join(TEAM_SEP));
+}
+
 let startPlayers = [];
 let startChoice = 1;
 let startAdvance = null;   // null = standarden for det valgte gruppetallet
+let startDouble = false;   // haket av = tilfeldige lag ved trekningen
+
+// Antallet som faktisk trekkes: lag ved double, ellers personer.
+function startRosterCount() {
+  return startDouble ? teamCount(startPlayers.length) : startPlayers.length;
+}
 
 function showStartDialog(players) {
   startPlayers = players;
+  startDouble = false;
   startChoice = suggestGroups(players.length);
   startAdvance = null;   // null = bruk standarden for det valgte gruppetallet
   renderStartDialog();
@@ -1430,6 +1462,16 @@ function selectStartChoice(g) {
 }
 function selectStartAdvance(a) { startAdvance = a; renderStartDialog(); }
 
+// Antall lag er halvparten av antall personer, så hvilke gruppetall som er
+// lovlige endrer seg. Både gruppevalget og videre-valget må derfor settes på
+// nytt — ellers står et valg igjen som ikke lenger går opp.
+function toggleStartDouble(on) {
+  startDouble = !!on;
+  startChoice = suggestGroups(startRosterCount());
+  startAdvance = null;
+  renderStartDialog();
+}
+
 // Standarden per gruppetall: to grupper spiller hele plasseringsstigen som før,
 // fire grupper sender gruppevinnerne videre som før.
 function defaultAdvance(groups) { return groups === 2 ? 'all' : 1; }
@@ -1438,13 +1480,30 @@ function currentAdvance() {
 }
 
 function renderStartDialog() {
-  const n = startPlayers.length;
+  const folk = startPlayers.length;
+  // n er antallet som faktisk trekkes: lag ved double, ellers personer.
+  const n = startRosterCount();
   const allowed = allowedGroups(n);
   const only = allowed.length === 1;
+  const enhet = startDouble ? 'lag' : 'deltakere';
+
+  // Double kan først velges når det blir nok lag til én lovlig gruppe.
+  const dblRow = document.getElementById('start-double-row');
+  const dblBox = document.getElementById('start-double');
+  const nokTilDouble = allowedGroups(teamCount(folk)).length > 0;
+  dblRow.style.display = folk >= 4 ? 'flex' : 'none';
+  dblBox.checked = startDouble;
+  dblBox.disabled = !nokTilDouble && !startDouble;
+  dblRow.classList.toggle('locked', dblBox.disabled);
+  document.getElementById('start-double-sub').textContent = !nokTilDouble
+    ? `Trenger minst ${MIN_GROUP * 2} deltakere`
+    : folk % 2
+      ? `${folk} deltakere → ${teamCount(folk)} lag, ett av dem med tre`
+      : `${folk} deltakere → ${teamCount(folk)} lag`;
 
   document.getElementById('start-sub').textContent = only
-    ? `${n} deltakere · ${allowed[0]} gruppe · ${matchCount(n, allowed[0])} kamper — start?`
-    : `${n} deltakere er påmeldt`;
+    ? `${n} ${enhet} · ${allowed[0]} gruppe · ${matchCount(n, allowed[0])} kamper — start?`
+    : startDouble ? `${folk} deltakere · ${n} lag` : `${n} deltakere er påmeldt`;
 
   // Navnene, ikke bare tallet: dette er siste sjanse til å se at noen mangler
   document.getElementById('start-players').innerHTML =
@@ -1467,7 +1526,7 @@ function renderStartDialog() {
     // Grunnen står som tekst, ikke i en title: hover finnes ikke på mobil, og
     // en deaktivert knapp kan ikke trykkes for å avsløre den.
     const blocked = ALLOWED_GROUPS.filter(g => !allowed.includes(g))
-      .map(g => `${g} grupper krever minst ${g * MIN_GROUP} deltakere`);
+      .map(g => `${g} grupper krever minst ${g * MIN_GROUP} ${enhet}`);
     document.getElementById('start-detail').innerHTML =
       `${sizes.join(' + ')} · ${matchCount(n, startChoice)} kamper`
       + blocked.map(b => `<br><span style="opacity:0.7;">${b}</span>`).join('');
@@ -1504,6 +1563,17 @@ function renderStartDialog() {
   } else {
     warn.style.display = 'none';
   }
+
+  // Uten et lovlig gruppetall er det ingenting å starte — knappen må si det,
+  // ikke la transaksjonen avvise først.
+  const startBtn = document.getElementById('start-confirm-btn');
+  startBtn.disabled = !allowed.length;
+  if (!allowed.length) {
+    warn.style.display = 'block';
+    warn.textContent = startDouble
+      ? `⚠️ ${n} lag er for få — ${MIN_GROUP} lag trengs for én gruppe.`
+      : `⚠️ ${n} deltakere er for få — minst ${MIN_GROUP} trengs.`;
+  }
 }
 
 // Forklarer valget i klartekst i stedet for å la folk gjette hva «2» betyr.
@@ -1526,17 +1596,23 @@ async function confirmStart(g) {
     res = await tRef.transaction(current => {
       if (!current) return current;
       const players = current.players || [];
+      // Lagene settes sammen her inne, av den ferske lista fra serveren: en
+      // påmelding som landet mens dialogen sto åpen skal være med i trekningen.
+      const roster = startDouble ? makeTeams(players) : players;
       // Avbryt bare når valget er blitt ulovlig, ikke fordi tallet har endret
       // seg: 12 → 13 med 4 grupper valgt er helt greit (4/3/3/3).
-      if (!allowedGroups(players.length).includes(g)) { rejectedPlayers = players; return; }
-      made = players.length;
-      const groups = computeGroups(players, g);
+      if (!allowedGroups(roster.length).includes(g)) { rejectedPlayers = players; return; }
+      made = roster.length;
+      const groups = computeGroups(roster, g);
       // Valget lagres sammen med gruppene, i samme transaksjon: da kan de ikke
       // komme i utakt om noen melder seg på i samme øyeblikk. advanceCount
       // klemmer det ned igjen hvis gruppene skulle bli mindre enn valget
       // forutsatte. tiebreaks nullstilles — de gjaldt den forrige trekningen.
       const adv = startAdvance === null ? defaultAdvance(g) : startAdvance;
-      return { ...current, groups, advance: adv, playoffResults: {}, tiebreaks: null };
+      // doubles lagres, ikke utledes: den styrer at deltakerlista ikke skal
+      // plukke opp lagnavn som personer (namesInTournament).
+      return { ...current, groups, advance: adv, doubles: startDouble || null,
+               playoffResults: {}, tiebreaks: null };
     });
   } catch (err) {
     btn.disabled = false; btn.textContent = 'Start';
@@ -1550,7 +1626,7 @@ async function confirmStart(g) {
     // sto den med knappene fra det gamle antallet og det nå ulovlige valget
     // fortsatt aktivt, så «velg på nytt» ga samme avvisning i evig løkke.
     startPlayers = rejectedPlayers;
-    startChoice = suggestGroups(rejectedPlayers.length);
+    startChoice = suggestGroups(startRosterCount());
     renderStartDialog();
     showToast(`${rejectedPlayers.length} deltakere nå — velg på nytt`);
     return;
@@ -1561,7 +1637,8 @@ async function confirmStart(g) {
   if (!res || !res.committed) { showToast('Kunne ikke starte — prøv igjen'); return; }
 
   hideStartDialog();
-  showToast(`${g} ${g===1?'gruppe':'grupper'} · ${matchCount(made, g)} kamper`);
+  showToast(`${g} ${g===1?'gruppe':'grupper'} · ${matchCount(made, g)} kamper`
+    + (startDouble ? ` · ${made} lag` : ''));
 }
 
 function resetTournament() {

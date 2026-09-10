@@ -8,7 +8,7 @@
 <meta name="robots" content="noindex, nofollow" />
 <title>dCup</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg?v=1" />
-<link rel="stylesheet" href="dcup.css?v=23">
+<link rel="stylesheet" href="dcup.css?v=24">
 </head>
 <body>
 
@@ -184,6 +184,14 @@
     <div style="font-size:16px;font-weight:700;margin-bottom:0.35rem;" id="start-title">Start turnering</div>
     <p class="muted mb1" id="start-sub"></p>
     <div class="player-tags mb1" id="start-players"></div>
+    <!-- Double: deltakerne settes sammen to og to ved trekningen (#50). -->
+    <label class="signup-row" id="start-double-row" style="display:none;">
+      <input type="checkbox" id="start-double" onchange="toggleStartDouble(this.checked)" />
+      <span class="join-info">
+        <span class="join-name-txt">Double — tilfeldige lag</span>
+        <span class="join-sub" id="start-double-sub"></span>
+      </span>
+    </label>
     <div class="form-group" id="start-choice-group">
       <label>Antall grupper</label>
       <div class="mode-grid" id="start-choice-grid"></div>

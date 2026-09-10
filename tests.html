@@ -278,6 +278,50 @@ const twoUnfinished = { groups:[
 ], mode:'wl', playoffResults:{} };
 eq('to grupper uten spilt finale gir ingen pall', podium(twoUnfinished), null);
 
+// ---------- double: tilfeldige lag ----------
+{
+section('double');
+const folk8 = ['a','b','c','d','e','f','g','h'];
+eq('8 deltakere gir 4 lag', teamCount(8), 4);
+eq('7 deltakere gir 3 lag', teamCount(7), 3);
+eq('5 deltakere gir 2 lag', teamCount(5), 2);
+eq('3 deltakere gir 1 lag', teamCount(3), 1);
+eq('1 deltaker gir ingen lag', teamCount(1), 0);
+
+const t8 = makeTeams(folk8);
+eq('4 lag av 8', t8.length, 4);
+ok('alle åtte er med, ingen dublett',
+   new Set(t8.flatMap(t => t.split(TEAM_SEP))).size === 8);
+ok('alle lag har to spillere', t8.every(t => t.split(TEAM_SEP).length === 2));
+
+// Oddetall: siste lag får tre, ingen står utenfor
+const t7 = makeTeams(['a','b','c','d','e','f','g']);
+eq('7 deltakere blir 3 lag', t7.length, 3);
+eq('størrelsene er 2 + 2 + 3', t7.map(t => t.split(TEAM_SEP).length).sort(), [2,2,3]);
+ok('alle sju er med', new Set(t7.flatMap(t => t.split(TEAM_SEP))).size === 7);
+
+const t5 = makeTeams(['a','b','c','d','e']);
+eq('5 deltakere blir 2 lag', t5.map(t => t.split(TEAM_SEP).length).sort(), [2,3]);
+ok('alle fem er med', new Set(t5.flatMap(t => t.split(TEAM_SEP))).size === 5);
+
+eq('for få til et lag gir ingenting', makeTeams(['a']), []);
+eq('tom liste gir ingenting', makeTeams([]), []);
+
+// Trekningen er tilfeldig, ikke alltid samme par
+const par = new Set();
+for (let i = 0; i < 60; i++) par.add(makeTeams(folk8)[0]);
+ok('sammensetningen varierer mellom trekninger', par.size > 1);
+
+// Lagnavn skal aldri bli personer i deltakerlista
+const dblT = { doubles: true, players: ['a','b','c','d'],
+  groups: [{ name:'A', players: ['a' + TEAM_SEP + 'b', 'c' + TEAM_SEP + 'd'], fixtures: [], results: {} }] };
+eq('namesInTournament ser personene, ikke lagene',
+   [...namesInTournament(dblT)].sort(), ['a','b','c','d']);
+eq('uten doubles telles gruppenavnene som før',
+   [...namesInTournament({ ...dblT, doubles: false })].sort(),
+   ['a','a / b','b','c','c / d','d']);
+}
+
 // ---------- playoffMatches ----------
 section('playoffMatches');
 function grp(name, players, results) { return { name, players, fixtures: roundRobin(players), results: results||{} }; }

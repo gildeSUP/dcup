@@ -709,3 +709,37 @@ oppdaterer `players`, at ingen eksisterende rad bytter plass når en ny person
 melder seg på, at «Tøm» flytter alle ned, og at turneringen fortsatt lar seg
 starte. Sett i både lys og mørk modus. `dcup.css` er bumpet til v=23.
 
+
+
+### 50. ✅ Double — tilfeldige lag ved trekningen
+
+Bygget under eventet, på bestilling. Deltakerne meldes på som enkeltpersoner
+som før; en avhaking i startdialogen setter dem sammen to og to når turneringen
+trekkes. Lagene («Ola / Kari») er selve deltakerne videre — gjennom grupper,
+kamper, tabell, sluttspill og TV.
+
+- **`players` beholder enkeltpersonene.** Lagene ligger bare i `groups`. Uten
+  det ville deltakerlista på eventet fått lagnavn som egne rader.
+- **`namesInTournament` hopper over gruppene når `doubles` er satt**, av samme
+  grunn — backfillen fra `525d0b3` ville ellers opprettet «Ola / Kari» som en
+  person.
+- **Lagene settes sammen inne i `confirmStart`-transaksjonen**, av den ferske
+  lista fra serveren. En påmelding som lander mens dialogen står åpen er dermed
+  med i trekningen.
+- **Oddetall gir ett lag med tre.** Alternativet er å la noen stå utenfor, som
+  er verre på en firmafest. Dialogen sier det før man trykker start.
+- **Alt som gjelder gruppestørrelse regnes på antall lag**, ikke personer: 8
+  deltakere er 4 lag, altså 1 eller 2 grupper. Under 6 deltakere er avhakingen
+  sperret med begrunnelse, og «Start» deaktiveres hvis ingen gruppetall går opp.
+
+**Verifisert** med 18 enhetstester (lagbygging for partall og oddetall, at alle
+er med, at sammensetningen varierer mellom trekninger, og at
+`namesInTournament` ser personene og ikke lagene) og 20 sjekker i nettleser:
+dialogteksten, at gruppevalget følger lagtallet, selve trekningen, at
+deltakerlista ikke får lagnavn etter at backfillen har gått, kamper, tabell,
+TV, oddetallstilfellet og sperren ved for få deltakere.
+
+**Kjent begrensning:** omdøper man en person som står i et lag, oppdateres
+`players`, men ikke navnet inne i lagstrengen i `groups`. `renameInTournament`
+bytter bare eksakte navn. Sjelden, og bevisst ikke rørt midt under et event —
+noter det som en oppfølger.
