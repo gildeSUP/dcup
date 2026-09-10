@@ -730,20 +730,30 @@ kamper, tabell, sluttspill og TV.
   9 deltakere blir 5 lag, ikke 4: den siste spilleren får en makker som alt er
   på et lag. Alle lag har dermed nøyaktig to spillere, og ingen sitter over.
 
-  De to lagene jokeren er med på møtes én gang. Da kan hun ikke spille mot seg
-  selv, og **kampen spilles som en singlekamp mellom de to andre** — resultatet
-  føres fortsatt på lagene. Slik får alle lag like mange kamper (4 av 4 med 5
-  lag), og tabellen forblir jevn. Varianten som ble vurdert først — å hoppe over
-  kampen — ga tre lag med fire kamper og to med tre, altså en skjev tabell.
+  De to lagene jokeren er med på møtes én gang. Da kan hun bare spille for det
+  ene laget, og **noen stepper inn for henne på det andre** — det løser seg på
+  gulvet. Kampen spilles altså som en helt vanlig doublekamp, resultatet føres
+  på lagene, alle lag får like mange kamper (4 av 4 med 5 lag), og tabellen
+  forblir jevn.
+
+  To varianter ble vurdert og forkastet underveis: å **hoppe over** kampen ga
+  tre lag med fire kamper og to med tre, altså en skjev tabell; å tvinge den til
+  en **singlekamp** mellom de to andre var unødvendig prescriptivt — i praksis
+  stepper noen inn.
 
   `sharedPlayer()`/`soloPair()` finner kampen igjen ved rendring, og den er
-  merket i kamplista, i kampdialogen og i køen på liveskjermen: «B er på begge
-  lag — spilles som I mot H».
+  merket i kamplista, i kampdialogen og i køen på liveskjermen: «I er på begge
+  lag — spiller for det ene, noen stepper inn på det andre».
 
   **Joker låser turneringen til én gruppe.** Med flere grupper kunne jokerens
-  to lag havnet hver sin vei og møttes igjen i finalen, og en finale som må
-  spilles som single er ingen finale. Med én gruppe finnes det ikke sluttspill,
-  så konflikten kan bare oppstå den ene gangen.
+  to lag havnet hver sin vei og møttes igjen i finalen. Med én gruppe finnes det
+  ikke sluttspill, så konflikten kan bare oppstå den ene gangen.
+
+  **Denne låsen kan vurderes på nytt:** når løsningen er en vikar og ikke en
+  singlekamp, er en finale mellom jokerens to lag i og for seg spillbar. Låsen
+  koster fleksibilitet — 11 deltakere blir 6 lag som tvinges inn i én gruppe på
+  15 kamper, der to grupper kunne vært bedre. Ikke endret uten at noen ber om
+  det.
 - **Alt som gjelder gruppestørrelse regnes på antall lag**, ikke personer: 8
   deltakere er 4 lag, altså 1 eller 2 grupper. Under 6 deltakere er avhakingen
   sperret med begrunnelse, og «Start» deaktiveres hvis ingen gruppetall går opp.

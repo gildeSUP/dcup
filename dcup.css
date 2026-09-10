@@ -490,8 +490,9 @@ button.join-info:hover .join-sub { color: var(--accent-text); }
   background: var(--border2); color: var(--text2); flex: none; }
 .tie-row.picked .tie-rank { background: var(--accent); color: #fff; }
 
-/* Jokerkampen ved double med oddetall (#50): lagene deler en spiller, så den
-   spilles som single mellom de to andre. Resultatet føres på lagene. */
+/* Jokerkampen ved double med oddetall (#50): lagene deler en spiller, så hun
+   kan bare spille for det ene — noen stepper inn på det andre. Resultatet
+   føres på lagene som ellers. */
 /* Bare raden med jokerkampen brytes: .fixture-row er flex uten wrap, og et
    barn med flex-basis:100% ville ellers klemt lagnavnene oppå hverandre. */
 .fixture-row.has-solo { flex-wrap: wrap; }

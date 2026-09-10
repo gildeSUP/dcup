@@ -1424,10 +1424,11 @@ function teamCount(n) { return n < 2 ? 0 : (n % 2 ? Math.floor(n / 2) + 1 : n / 
 // med tre — betyr at noen sitter over i hver kamp, og det er dårligere når man
 // først spiller double.
 //
-// De to lagene jokeren er med på møtes én gang. Da kan hun ikke spille mot seg
-// selv, og kampen spilles som en singlekamp mellom de to andre. Begge lagene
-// får dermed like mange kamper som alle andre, og tabellen forblir jevn.
-// sharedPlayer() finner den kampen igjen ved rendring.
+// De to lagene jokeren er med på møtes én gang. Da kan hun bare spille for det
+// ene laget, og noen stepper inn for henne på det andre — det løser seg på
+// gulvet. Kampen spilles altså som en vanlig doublekamp, og begge lagene får
+// like mange kamper som alle andre, så tabellen forblir jevn.
+// sharedPlayer() finner den kampen igjen ved rendring, så appen kan si fra.
 function makeTeams(players) {
   const rest = shuffle(players);
   if (rest.length < 2) return [];
@@ -1451,7 +1452,8 @@ function sharedPlayer(a, b) {
   return String(a).split(TEAM_SEP).find(n => bs.includes(n)) || null;
 }
 
-// De to som faktisk skal spille når lagene deler en spiller.
+// Den delte spilleren og de to andre — de to som er sikre på å spille, én på
+// hver side. Jokeren spiller for det ene laget, og en vikar tar det andre.
 function soloPair(a, b) {
   const felles = sharedPlayer(a, b);
   if (!felles) return null;
@@ -1530,7 +1532,7 @@ function renderStartDialog() {
     ? `Trenger minst ${MIN_GROUP * 2} deltakere`
     : folk % 2
       ? `${folk} deltakere → ${teamCount(folk)} lag. Én spiller er med på to lag; `
-        + 'den ene kampen spilles som single mellom de to andre'
+        + 'i kampen der lagene møtes stepper noen inn for henne'
       : `${folk} deltakere → ${teamCount(folk)} lag`;
 
   document.getElementById('start-sub').textContent = only || joker
@@ -2319,8 +2321,8 @@ function renderTournamentView() {
       else if(r.winner==='b') badge=`<span class="fix-badge res-b">${escapeHTML(f[1])} vinner</span>`;
       else if(r.winner==='draw') badge=`<span class="fix-badge res-d">Uavgjort</span>`;
       else badge=`<span class="fix-badge res-none">Trykk for å registrere</span>`;
-      // Jokerkampen: lagene deler en spiller, så den spilles som single
-      // mellom de to andre. Resultatet føres fortsatt på lagene.
+      // Jokerkampen: lagene deler en spiller, så hun kan bare spille for det
+      // ene. Noen stepper inn på det andre. Resultatet føres på lagene.
       const solo = soloPair(f[0], f[1]);
       return `<div class="fixture-row${solo?' has-solo':''}" onclick="openMatchDialog(${gi},${i})">
         <span class="fix-num">${i+1}.</span>
@@ -2328,8 +2330,8 @@ function renderTournamentView() {
         <span class="fix-vs">vs</span>
         <span class="fix-team">${escapeHTML(f[1])}</span>
         ${badge}
-        ${solo ? `<span class="fix-solo">${escapeHTML(solo.felles)} er på begge lag — spilles som `
-          + `${escapeHTML(solo.hjemme)} mot ${escapeHTML(solo.borte)}</span>` : ''}
+        ${solo ? `<span class="fix-solo">${escapeHTML(solo.felles)} er på begge lag — `
+          + 'spiller for det ene, noen stepper inn på det andre</span>' : ''}
       </div>`;
     }).join('');
     return `<div class="card">
@@ -2653,8 +2655,8 @@ function showMatchDialog(p1, p2, mode, onResult, r, scoreH, scoreA, hasScore, no
           </div>
           ${(() => {
             const solo = soloPair(p1, p2);
-            return solo ? `<div class="match-dialog-solo">${escapeHTML(solo.felles)} er på begge lag `
-              + `— spilles som <strong>${escapeHTML(solo.hjemme)} mot ${escapeHTML(solo.borte)}</strong></div>` : '';
+            return solo ? `<div class="match-dialog-solo"><strong>${escapeHTML(solo.felles)}</strong> er på begge lag `
+              + `— spiller for det ene, og noen stepper inn på det andre</div>` : '';
           })()}
           ${body}
           <button class="dialog-clear-btn" onclick="dlgClear()">Slett resultat</button>
@@ -3351,7 +3353,7 @@ function renderDisplaySide(t) {
             <span class="display-queue-num">${i===0?'▶':i+1}</span>
             <span class="display-queue-teams">${escapeHTML(m.f[0])}<span class="display-vs">vs</span>${escapeHTML(m.f[1])}${
               (() => { const solo = soloPair(m.f[0], m.f[1]);
-                return solo ? `<span class="display-solo">single: ${escapeHTML(solo.hjemme)} mot ${escapeHTML(solo.borte)}</span>` : ''; })()
+                return solo ? `<span class="display-solo">${escapeHTML(solo.felles)} er på begge lag — vikar på det ene</span>` : ''; })()
             }</span>
             ${m.playoff
               ? `<span class="display-queue-grp po">${escapeHTML(m.label)}</span>`
