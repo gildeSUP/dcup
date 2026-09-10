@@ -379,40 +379,44 @@ koden, med mindre annet står.
 
 ### Feil
 
-#### 35. 🔴 Uavgjort i en sluttspillkamp låser turneringen
+#### 35. ✅ Fikset i `7f29fbc` — uavgjort i en sluttspillkamp
 
-I `wdl`-modus (fotball, sjakk, hockey) viser sluttspillsdialogen
-«Uavgjort»-knappen, og i `score`-modus gir lik score `winner: 'draw'`. Begge
-deler lar seg lagre på en finale.
+**Var:** `wdl`-modus viste «Uavgjort» også i sluttspillsdialogen, og lik score i
+`score`-modus ga `winner: 'draw'`. Da returnerte `playoffWinner` `undefined`, så
+`podium()` ble `null` — men `isFinished()` så bare at `match_0.winner` fantes
+(`'draw'` er sant), og **kortet sa «Ferdig» uten at turneringen hadde en
+vinner**. Ingenting i UI-et forklarte hvorfor.
 
-Da skjer dette: `playoffWinner` returnerer `undefined` for et uavgjort
-resultat, så `podium()` blir `null` — ingen vinner, ingen pall, ingen
-avsløring på liveskjermen. Men `isFinished()` ser bare at `match_0.winner`
-finnes (`'draw'` er sant), så **kortet sier «Ferdig» uten at turneringen har
-en vinner**. Ingenting i UI-et forteller hvorfor.
+**Nå:** `showMatchDialog` tar et `noDraw`-flagg som `openPlayoffDialog` setter.
+Sluttspillkamper viser ingen «Uavgjort»-knapp, og lik score avvises med «Kampen
+må ha en vinner — kan ikke ende likt». `isFinished` krever `winner !== 'draw'`.
+Sluttspillfanen sier «Finalen står likt — den må avgjøres før turneringen har en
+vinner», og liveskjermen skriver det samme i stedet for «Alle kamper spilt».
 
-Bekreftet: sjakkturnering, gruppespill ferdig, «Uavgjort» i finalen →
-`podium()` = `null`, `isFinished()` = `true`, hintet sier fortsatt bare
-«Trykk på en kamp for å registrere resultat».
+**Verifisert i nettleser:** sjakkturnering (`wdl`), gruppespill ferdig. Finalen
+viser bare de to vinnerknappene, gruppekampen har fortsatt «Uavgjort · 1 pkt
+hver». Med et uavgjort skrevet rett i basen — slik gammel data ser ut:
+`isFinished: false`, `podium: null`, kortet «6/6 spilt», hintet forklarer.
+Normalveien urørt: avgjort finale gir pall og «er avgjort» på skjermen.
 
-Fiksen har to halvdeler: ikke tilby uavgjort i en sluttspillkamp (der må det
-kåres en vinner), og la `isFinished` kreve en faktisk vinner, ikke bare et
-resultat. Uavgjort-dialogen fra i går er forresten akkurat riktig mønster å
-sende folk videre til: «finalen endte likt — spill omkamp eller avgjør det».
+#### 36. ✅ Fikset i `7f29fbc` — liveskjermen viser sluttspillet
 
-#### 36. 🔴 Liveskjermen viser ikke sluttspillet
+**Var:** `renderDisplaySide` viste bare gruppekampene, så TV-en sto på «🏁 Alle
+kamper spilt / Ferdig» mens semifinaler, bronse og finale gjensto. Ordet
+«finale» forekom ikke ett sted i `#disp-content`. Det er nettopp de kampene folk
+samler seg rundt skjermen for.
 
-`renderDisplaySide` viser bare gruppekampene. Når gruppespillet er ferdig,
-står TV-en på «🏁 Alle kamper spilt / Ferdig» — også når semifinaler, bronse
-og finale gjenstår. Sluttspillet finnes ikke på storskjermen i det hele tatt;
-det neste som skjer der er at pallen plutselig spretter opp.
+**Nå:** `playoffQueue(t)` legger uspilte sluttspillkamper i køen, med eget
+ambergult merke (`.display-queue-grp.po`) som viser «FINALE», «SEMIFINALE 1»,
+«BRONSE». Kamper som venter på den foran tas ikke med — «Vinner av semi 1» er
+ingen kø. `lastPlayoffPlayed(t)` gjør at «Siste resultat» velger nyeste av
+gruppe- og sluttspillkamp på `ts`, ellers ville skjermen vist en gruppekamp
+lenge etter finalen.
 
-Bekreftet på 1280×720: gruppespill ferdig, finale uspilt, og ordet «finale»
-forekommer ikke ett eneste sted i `#disp-content`.
-
-Dette ble mer synlig av #17 i går (turneringen er ikke lenger «ferdig» før
-finalen er spilt), men hullet har alltid vært der. Det er også den delen av
-kvelden folk faktisk samler seg rundt skjermen for.
+**Verifisert på 1280×720:** gruppespill ferdig ga «▶ A2 vs B3 [FINALE], A1 vs A3
+[3. PLASS], B1 vs B2 [5. PLASS]», tre ambergule merker. Med fire grupper står
+bare semiene i køen først, og finalen og bronsen kommer inn når semiene er
+spilt.
 
 #### 37. ✅ Fikset — en deltaker i en startet turnering kan ikke fjernes
 
@@ -450,74 +454,102 @@ poengtavle: ingen låser før start, seks låser og tre kryss etter, låsen
 navngir turneringen, `removePerson` kalt direkte lar seg ikke lure, og
 poengtavla lar seg fortsatt fjerne fra — med scoren ryddet bort.
 
-#### 38. En slettet turnering gjenoppstår, og skjermen merker det ikke
+#### 38. ✅ Fikset i `7f29fbc` — slettet turnering merkes og gjenoppstår ikke
 
-Ikke aktuelt i dag (det finnes ingen sletting), men det er en forutsetning
-for **P1 #10**, så det hører med her.
+**Var:** lytteren i `openTournament` gjorde `if (data)` og ignorerte `null`.
+Skjermen ble stående med gamle data, og et påfølgende `tWrite` **gjenskapte
+turneringen i basen** — en sletting kunne bli ugjort av hvem som helst som
+tilfeldigvis sto på den skjermen.
 
-Bekreftet ved å sette turneringsnoden til `null` mens en telefon sto inne i
-turneringen: skjermen ble stående med gamle data (`openTournament` sin lytter
-gjør `if (data)` og ignorerer `null`), og et påfølgende `tWrite` **gjenskapte
-turneringen i basen**. En sletting kan altså bli ugjort av hvem som helst som
-tilfeldigvis står på den skjermen.
+**Nå:** lytteren behandler `data === null`, viser «Turneringen er slettet» og går
+tilbake til eventet. `backToEvent` nuller `tRef`, og det er det som hindrer at
+`update()` oppretter noden igjen.
 
-`#10` må derfor fikse begge deler: lytteren må reagere på at noden er borte
-(kaste deg tilbake til eventet med en beskjed), og `tWrite` må ikke skrive til
-en node som ikke finnes.
+Jeg skrev først et eget `tGone`-flagg som `tWrite` sjekket, men tok det ut:
+`backToEvent()` kjører synkront i samme callback og nuller både flagget og
+`tRef`, så flagget var aldri sant når det ble lest. Et flagg som alltid er falskt
+antyder en beskyttelse som ikke finnes.
 
-#### 39. `openMatchDialog` kaster når kampen er borte
+**Verifisert:** noden satt til `null` mens skjermen sto inne i turneringen →
+`screen-tournament` → `screen-event`, toast, og et `tWrite` etterpå gjenskapte
+den ikke. **Forutsetningen for #10 er dermed på plass.**
 
-`const f = fixtures[idx]` sjekkes ikke, og `fkey(f)` gjør `f[0]`. Bekreftet:
-`openMatchDialog(0, 99)` kaster `Cannot read properties of undefined
-(reading '0')`. Nås hvis noen nullstiller eller starter turneringen på nytt
-fra en annen telefon i det du trykker på en kamprad. Én linje: `if (!f) return;`
-(gjerne med en toast om at oppsettet er endret).
+#### 39. ✅ Fikset — `openMatchDialog` tåler at kampen er borte
 
-#### 40. `removeTPlayer` har indeksen bakt inn i `onclick`
+**Var:** `const f = fixtures[idx]` ble ikke sjekket, så `fkey(f)` kastet på
+`f[0]`. `openMatchDialog(0, 99)` ga `Cannot read properties of undefined`.
 
-`renderTPlayers` skriver `onclick="removeTPlayer(${i})"`. Lista tegnes på
-nytt ved hvert snapshot, så indeksen kan bety en annen person i det øyeblikket
-fingeren treffer. Poengtavla løste akkurat dette ved å slå opp
-`players.indexOf(navn)` når hendelsen skjer (se #9) — `renderTPlayers` er det
-siste stedet som ikke gjør det. Samme mønster som P0 #1 og #9.
+**Nå:** `if (!f) { showToast('Kampoppsettet er endret — prøv igjen'); return; }`
 
-Vinduet er lite, men det er nettopp under påmelding — når alle legger til navn
-samtidig — at lista endrer seg under fingeren.
+**Verifisert:** `openMatchDialog(0, 99)` kaster ikke, gir toasten, og dialogen
+åpnes ikke.
 
-#### 41. «Del link» feiler stille i innebygde nettlesere
+#### 40. ✅ Fikset — fjern-knappen slår opp navnet, ikke indeksen
 
-`copyEventLink` gjør `navigator.clipboard.writeText(url).then(...)` uten
-`catch`, og uten sjekk på at `navigator.clipboard` finnes. Bekreftet: uten
-`navigator.clipboard` kaster den `Cannot read properties of undefined
-(reading 'writeText')` og **brukeren får ingen beskjed i det hele tatt**.
+**Var:** `renderTPlayers` skrev `onclick="removeTPlayer(${i})"`. Lista tegnes på
+nytt ved hvert snapshot, så indeksen kunne bety en annen person i det fingeren
+traff — og det skjer nettopp under påmelding, når alle legger til navn samtidig.
 
-Dette er ikke teoretisk: `navigator.clipboard` mangler i en del innebygde
-nettlesere (Slack, Teams, Facebook, LinkedIn) — altså akkurat der en link til
-et firmaarrangement blir åpnet. Trenger en `catch` og en reserveløsning som
-viser linken slik at den kan markeres og kopieres manuelt.
+**Nå:** raden bygges i DOM-et med `textContent` og en closure over navnet, og
+indeksen slås opp med `indexOf(navn)` når hendelsen skjer — samme mønster som
+poengtavla fikk i #9. Er navnet borte, sier den «Spilleren er alt fjernet».
 
-#### 42. Nettleserens tilbakeknapp kaster deg ut av eventet
+Bieffekt: dette var **det siste stedet med brukerdata i en `onclick`-streng**,
+så et hjørne av #34 er lukket samtidig.
 
-Appen bruker bare `history.replaceState`, aldri `pushState`. Bekreftet: står
-du inne i en turnering og trykker tilbake i nettleseren, havner du på
-**forsiden** (`screen-home`), ute av eventet — ikke på eventskjermen. Én gang
-til, og du er ute av siden.
+**Verifisert:** knappen laget da E2 lå på indeks 1 fjernet E2 etter at lista
+forskjøv seg (E1 fjernet fra en annen klient). Før fiksen ville den tatt E3.
 
-På telefon er tilbake den mest brukte bevegelsen som finnes. Folk kommer til å
-tro at de har mistet turneringen. Løsningen er `pushState` ved
-`openTournament` og en `popstate`-lytter som går tilbake til eventet (og som
-lukker en åpen dialog i stedet for å navigere, hvis en er oppe).
+#### 41. ✅ Fikset — «Del link» feiler ikke stille lenger
 
-#### 43. Ingen feilhåndtering eller ventetilstand når et event åpnes
+**Var:** `copyEventLink` gjorde `navigator.clipboard.writeText(url).then(...)`
+uten `catch` og uten å sjekke at `navigator.clipboard` finnes. Uten den kastet
+den, og **brukeren fikk ingen beskjed i det hele tatt**. `navigator.clipboard`
+mangler i flere innebygde nettlesere — Slack, Teams, Facebook, LinkedIn — altså
+nettopp der en link til et firmaarrangement åpnes.
 
-`loadEvent` gjør `await db.ref(...).once('value')` uten `try/catch`. Nekter
-reglene lesing — som er nøyaktig det #5/#34 handler om å risikere — blir det
-en uhåndtert rejection, og brukeren blir stående på forsiden uten et ord.
-Samme hvis nettet er tregt: det finnes ingen «Laster event…», bare en tom
-forside inntil svaret kommer.
+**Nå:** sjekk på at API-et finnes, `catch` på løftet, og en reserveboks
+(`#link-fallback`) som viser linken i et readonly-felt med teksten markert, slik
+at den kan kopieres manuelt.
 
-Med tjue telefoner som åpner linken samtidig på gjestenettet er dette det
-første folk vil oppleve hvis noe er galt.
+**Verifisert:** med `navigator.clipboard` satt til `undefined` kaster den ikke,
+og boksen kommer opp med hel URL. Samme når `writeText` avviser.
+
+#### 42. ✅ Fikset — tilbakeknappen går til eventet
+
+**Var:** appen brukte bare `history.replaceState`. Sto du inne i en turnering og
+trykket tilbake, havnet du på **forsiden**, ute av eventet. På telefon er tilbake
+den mest brukte bevegelsen som finnes.
+
+**Nå:** `openTournament` bruker `pushState`, og en `popstate`-lytter går til
+eventskjermen. Hver dialog legger igjen sin **egen** historikkoppføring via
+`lockBodyScroll`, så tilbake lukker dialogen uten å bytte skjerm.
+`unlockBodyScroll` rydder oppføringen med `history.back()` når lukkingen kom fra
+en knapp — ellers ville det krevd to tilbake-trykk å komme videre.
+
+Første forsøk re-pushet state inne i `popstate`, som er feil mønster: når
+`popstate` fyrer har nettleseren alt flyttet seg, så det pushet forrige
+oppføring, og å lukke en dialog byttet skjerm (`screen-event` →
+`screen-tournament`, bekreftet i test). Derfor ligger oppføringen nå på
+*åpningen* av dialogen i stedet.
+
+**Verifisert:** tilbake fra turnering → eventskjermen. Tilbake med dialog oppe →
+dialogen lukkes, skjermen står, `body.overflow` frigjøres. Lukket med knapp →
+ett tilbake-trykk går videre til eventet, ikke to.
+
+#### 43. ✅ Fikset — ventetilstand og feilmelding når et event åpnes
+
+**Var:** `loadEvent` gjorde `await ... .once('value')` uten `try/catch`. Nektet
+reglene lesing, ble det en uhåndtert rejection og brukeren sto på forsiden uten
+et ord. Ingen «Laster event…» heller, bare en tom forside inntil svaret kom.
+
+**Nå:** `try/catch` rundt lesingen, `setLoading('Laster event…')` mens den
+pågår, og `showEventError()` som skiller de to tilfellene: «Fikk ikke kontakt med
+basen. Sjekk nettet og prøv igjen.» mot «Event ikke funnet. Sjekk at linken er
+hel.» `alert()` er borte. En gammel feilmelding ryddes ved nytt forsøk.
+
+**Verifisert:** `?e=finnes-ikke` gir meldingen på forsiden, ventetilstanden er
+skjult etterpå, ingen `alert`, ingen uhåndtert rejection.
 
 #### Fortsatt åpent fra før, som denne gjennomgangen bekrefter
 
