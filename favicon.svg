@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-3 -3 36 34">
+  <!-- dCompany-merket som favicon. viewBox har 3 enheter luft rundt den tette
+       croppen, ellers klistrer «d»-en seg til kanten på 16×16.
+       Fargen følger nettleserens temafarge: mørk navy mot lys fanelinje,
+       lys mot mørk. Nettlesere som ignorerer media-spørringen får navy, som
+       er riktig for den vanligste fanelinja. -->
+  <style>
+    .mark { fill: #090F26; }
+    @media (prefers-color-scheme: dark) { .mark { fill: #EEF0F6; } }
+  </style>
+  <path class="mark" d="M0 17.292C0 11.5957 3.22816 6.85055 8.87464 6.85055C11.487 6.85055 13.4053 7.88355 14.6741 9.3736V0.199219H19.2757V27.3248H14.6667V25.2253C13.3978 26.7116 11.4796 27.7484 8.86718 27.7484C3.22069 27.7484 0 23.007 0 17.292ZM9.78897 10.8822C6.43019 10.8822 4.63885 13.4833 4.63885 17.3069C4.63885 21.1305 6.44512 23.7353 9.78897 23.7353C12.629 23.7353 14.7824 21.6284 14.7824 17.92V16.7347C14.7824 12.9482 12.629 10.8822 9.78897 10.8822Z"/>
+  <path d="M21.707 0.199219V7.58629C23.6718 7.58235 25.5547 6.80222 26.9422 5.41719C28.3298 4.03217 29.1085 2.15548 29.1075 0.199219H21.707Z" fill="#2E6CFA"/>
+</svg>

@@ -91,6 +91,18 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 /* ===== HOME SCREEN ===== */
 .home-hero { text-align: center; margin-bottom: 2rem; }
 .home-logo { font-size: 48px; margin-bottom: 0.5rem; display: block; }
+/* dCompany-merket. Brand-fargene er #090F26 på lys og #EEF0F6 på mørk grunn —
+   samme to varianter som brand-filene, men drevet av currentColor. */
+.dc-logo { width: 20px; height: 18.7px; flex-shrink: 0; color: #090F26; }
+/* Må stå ETTER basisregelen: en overstyring i media-blokka øverst i fila taper
+   mot en senere regel med samme spesifisitet. */
+@media (prefers-color-scheme: dark) { .dc-logo { color: #EEF0F6; } }
+.made-by { display: flex; align-items: center; justify-content: center; gap: 7px;
+  margin-top: 1.5rem; font-size: 12px; color: var(--text3); }
+.display-brand { display: flex; align-items: center; gap: 7px; font-size: 12px;
+  color: rgba(255,255,255,0.35); }
+/* Liveskjermen har alltid mørk grunn, uansett hva systemet står på */
+.display-layout .dc-logo { color: #EEF0F6; }
 .home-title { font-size: 28px; font-weight: 700; margin-bottom: 0.25rem; }
 .home-sub { font-size: 15px; color: var(--text2); }
 .home-actions { display: grid; gap: 10px; margin-bottom: 1.5rem; }
@@ -103,6 +115,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 .sport-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 0.5rem; }
 @media (min-width: 480px) { .sport-grid { grid-template-columns: repeat(4, 1fr); } }
 .sport-btn { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 12px 6px; border-radius: var(--radius); border: 0.5px solid var(--border2); background: var(--bg2); cursor: pointer; transition: all 0.15s; font-family: inherit; }
+.sport-btn { color: var(--text); }
 .sport-btn:hover { border-color: var(--accent); background: var(--accent-bg); }
 .sport-btn.selected { background: var(--accent-bg); border-color: var(--accent); }
 .sport-btn-icon { font-size: 22px; }
@@ -114,9 +127,20 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 .mode-btn { padding: 10px 6px; border-radius: var(--radius); border: 0.5px solid var(--border2); background: var(--bg2); cursor: pointer; text-align: center; font-family: inherit; transition: all 0.15s; }
 .mode-btn:hover { border-color: var(--accent); }
 .mode-btn.selected { background: var(--accent-bg); border-color: var(--accent); }
+/* <button> arver ikke color fra body — nettleserens egen stil setter
+   buttontext, altså svart. Uten dette ble tallet i .mode-btn-icon svart på
+   mørk knapp (målt kontrast 1.35). Etikettene så riktige ut fordi de setter
+   farge selv. Treffer bare rutenettene med TALL — «antall grupper» og «videre
+   fra hver gruppe»; emoji-ikonene i de andre bryr seg ikke om color. */
+.mode-btn { color: var(--text); }
 .mode-btn-icon { font-size: 16px; display: block; margin-bottom: 3px; }
 .mode-btn-label { font-size: 11px; font-weight: 600; color: var(--text2); }
+.mode-btn.selected .mode-btn-icon,
 .mode-btn.selected .mode-btn-label { color: var(--accent-text); }
+/* Deaktivert trenger egen stil: den eksplisitte fargen over slår ut
+   nettleserens gråing, så uten denne så en sperret knapp aktiv ut. */
+.mode-btn:disabled { opacity: 0.4; cursor: default; }
+.mode-btn:disabled:hover { border-color: var(--border2); }
 
 /* ===== EVENT DASHBOARD ===== */
 .event-header { margin-bottom: 1.25rem; }

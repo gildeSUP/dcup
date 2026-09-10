@@ -7,7 +7,8 @@
      De skal kunne deles fritt, men ikke ligge søkbare i Google. -->
 <meta name="robots" content="noindex, nofollow" />
 <title>dCup</title>
-<link rel="stylesheet" href="dcup.css?v=16">
+<link rel="icon" type="image/svg+xml" href="favicon.svg?v=1" />
+<link rel="stylesheet" href="dcup.css?v=19">
 </head>
 <body>
 
@@ -33,6 +34,16 @@
   </div>
 </div>
 
+<!-- dCompany-merket, definert én gang. Geometrien er fra
+     symbolPrimaryDark_cropped.svg (tettest crop); fargen på «d»-en kommer fra
+     CSS så den følger lys/mørk modus i stedet for to filer. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="dc-mark" viewBox="0 0 30 28">
+    <path d="M0 17.292C0 11.5957 3.22816 6.85055 8.87464 6.85055C11.487 6.85055 13.4053 7.88355 14.6741 9.3736V0.199219H19.2757V27.3248H14.6667V25.2253C13.3978 26.7116 11.4796 27.7484 8.86718 27.7484C3.22069 27.7484 0 23.007 0 17.292ZM9.78897 10.8822C6.43019 10.8822 4.63885 13.4833 4.63885 17.3069C4.63885 21.1305 6.44512 23.7353 9.78897 23.7353C12.629 23.7353 14.7824 21.6284 14.7824 17.92V16.7347C14.7824 12.9482 12.629 10.8822 9.78897 10.8822Z" fill="currentColor"/>
+    <path d="M21.707 0.199219V7.58629C23.6718 7.58235 25.5547 6.80222 26.9422 5.41719C28.3298 4.03217 29.1085 2.15548 29.1075 0.199219H21.707Z" fill="#2E6CFA"/>
+  </symbol>
+</svg>
+
 <!-- HOME -->
 <div id="screen-home" class="screen center-screen active">
   <div class="center-card">
@@ -53,6 +64,10 @@
     <!-- #43: ventetilstand og feilmelding når et event åpnes -->
     <p class="muted" id="home-loading" style="display:none;margin-top:0.75rem;"></p>
     <div class="form-error" id="home-error" style="display:none;"></div>
+    <div class="made-by">
+      <svg class="dc-logo" aria-hidden="true" focusable="false"><use href="#dc-mark"/></svg>
+      <span>fra dCompany</span>
+    </div>
   </div>
 </div>
 
@@ -354,6 +369,10 @@
   </div>
   <div class="display-footer">
     <div class="display-live"><div class="display-live-dot"></div> Live</div>
+    <div class="display-brand">
+      <svg class="dc-logo" aria-hidden="true" focusable="false"><use href="#dc-mark"/></svg>
+      <span>dCompany</span>
+    </div>
     <button class="btn-ghost btn-sm" onclick="exitDisplay()" style="opacity:0.4;font-size:11px;">Avslutt</button>
   </div>
 </div>

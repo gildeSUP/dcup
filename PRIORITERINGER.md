@@ -95,6 +95,35 @@ turneringen, og liveskjermen viser sluttspillkampene i køen.
 
 ---
 
+### 48. Liveskjermen har ingen feilhåndtering
+*(bevisst utsatt 10. sept, rett før event — begrunnelse nederst i punktet)*
+
+`loadEvent` fikk `setLoading`, `try/catch` og `showEventError` da #43 ble
+fikset, og både `eventRef.on` og `tRef.on` fikk error-callback. Liveskjermen
+fikk ingenting av det. Tre hull, alle verifisert kjørende i nettleser:
+
+1. **`loadDisplayScreen` mangler `try/catch`** rundt meta-lesingen. Simulert
+   `PERMISSION_DENIED` ga uhåndtert rejection, og TV-en ble stående på
+   forsiden med «Opprett nytt event».
+2. **Event ikke funnet** gir `showScreen('screen-home')` — samme forside, uten
+   forklaring. Aktuelt straks basen wipes eller noen har et gammelt bokmerke.
+3. **`dispRef.on('value', cb)` er registrert uten error-callback.** Verifisert:
+   med meta OK og turneringslesingen feilende viser TV-en riktig eventnavn og
+   deretter **«Ingen turneringer ennå»** — en selvsikker usannhet på storskjerm.
+
+Fiksen er å speile det `loadEvent` alt gjør, med tekst stor nok til å leses
+tvers over rommet.
+
+**Hvorfor utsatt:** en nettverksglipp utløser *ikke* error-callbacken — RTDB
+holder på siste data og synker opp igjen. #48 dekker i praksis bare
+tilgangsfeil, og dem fanger røyktesten av Firebase-reglene. Går den gjennom,
+ligger #48 i dvale gjennom kvelden.
+
+**Operativt tell så lenge den står åpen:** sier TV-en «Ingen turneringer ennå»
+om et event du vet har en turnering, er det ikke sant — last lenken på nytt.
+
+---
+
 ## P1 — reelle hull
 
 ### 6. ✅ Fikset i `4bffb0c` (Steg 3)
