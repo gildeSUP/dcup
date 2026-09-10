@@ -405,6 +405,19 @@ function showPeopleDialog() {
 }
 function hidePeopleDialog() { document.getElementById('people-overlay').style.display = 'none'; unlockBodyScroll(); }
 
+// Turneringene der navnet er låst fast. Etter trekningen ligger navnet i
+// gruppene, kampoppsettet og resultatnøklene, ikke bare i players — fjerner vi
+// det bare fra players, står personen igjen i tabellen og i kampkøen uten å
+// være deltaker lenger.
+//
+// Gjelder bare gruppespill. En poengtavle har ingen trekning (det er derfor
+// isSignupLocked er usann der), og folk skal fortsatt kunne komme og gå.
+function lockedTournamentsFor(name) {
+  return sortedTournaments(tournaments)
+    .filter(([, t]) => isSignupLocked(t) && tournamentHasName(t, name))
+    .map(([, t]) => t.name || 'turnering uten navn');
+}
+
 function renderPeopleList() {
   const people = Object.values(eventPeople).sort((a,b)=>(a.joined||0)-(b.joined||0));
   const wrap = document.getElementById('people-list');
@@ -414,6 +427,7 @@ function renderPeopleList() {
       .filter(([, t]) => (t.players||[]).includes(p.name))
       .map(([, t]) => (SPORTS.find(s=>s.id===t.sport)||SPORTS[SPORTS.length-1]).icon);
     const key = safeKey(p.name);
+    const locked = lockedTournamentsFor(p.name);
     return `<label class="signup-row" style="cursor:default;">
       <span class="join-icon">🙋</span>
       <span class="join-info">
@@ -421,7 +435,10 @@ function renderPeopleList() {
         <span class="join-sub">${sports.length ? sports.join(' ') : 'Ingen turneringer ennå'}</span>
       </span>
       <button class="board-edit" title="Rediger navn" data-act="rename" data-key="${escapeHTML(key)}">✏️</button>
-      <button class="board-del" title="Fjern deltaker" data-act="remove" data-key="${escapeHTML(key)}">×</button>
+      ${locked.length
+        ? `<button class="people-lock" data-act="locked" data-key="${escapeHTML(key)}"
+             title="Med i ${escapeHTML(locked.join(', '))} — kan ikke fjernes">🔒</button>`
+        : `<button class="board-del" title="Fjern deltaker" data-act="remove" data-key="${escapeHTML(key)}">×</button>`}
     </label>`;
   }).join('');
 }
@@ -434,6 +451,13 @@ document.getElementById('people-list')?.addEventListener('click', e => {
   if (!btn) return;
   if (btn.dataset.act === 'rename') renamePerson(btn.dataset.key);
   else if (btn.dataset.act === 'remove') removePerson(btn.dataset.key);
+  // Låsen er en knapp og ikke bare et ikon, slik at den kan trykkes: på mobil
+  // finnes ingen hover, så en title alene ville aldri forklart noe.
+  else if (btn.dataset.act === 'locked') {
+    const p = eventPeople[btn.dataset.key];
+    const t = p ? lockedTournamentsFor(p.name)[0] : null;
+    showToast(t ? `Låst i «${t}» — turneringen er startet` : 'Kan ikke fjernes');
+  }
 });
 document.getElementById('prefill-list')?.addEventListener('change', e => {
   const box = e.target.closest('input[data-key]');
@@ -445,6 +469,16 @@ document.getElementById('prefill-list')?.addEventListener('change', e => {
 async function removePerson(key) {
   const p = eventPeople[key];
   if (!p) return;
+
+  // Sjekkes her og ikke bare når lista tegnes: en annen telefon kan ha startet
+  // turneringen mens deltakerlista sto åpen.
+  const locked = lockedTournamentsFor(p.name);
+  if (locked.length) {
+    showToast(`Låst i «${locked[0]}» — turneringen er startet`);
+    renderPeopleList();
+    return;
+  }
+
   if (!confirm(`Fjerne ${p.name}? De fjernes også fra turneringene de er med i.`)) return;
   try {
     // Én transaksjon per turnering. Tidligere ble players-listene regnet ut fra
@@ -453,6 +487,16 @@ async function removePerson(key) {
     for (const tid of Object.keys(tournaments)) {
       await setSignup(tid, p.name, false);
     }
+    // Poengtavle-scoren ligger under sin egen nøkkel og følger ikke med når
+    // navnet fjernes fra players. Uten dette ble den liggende usynlig igjen —
+    // og dukket opp som en gammel score hvis navnet ble lagt til på nytt.
+    const scoreUpdates = {};
+    Object.entries(tournaments).forEach(([tid, t]) => {
+      if ((t.scores || {})[safeKey(p.name)]) {
+        scoreUpdates['events/'+currentEventId+'/tournaments/'+tid+'/scores/'+safeKey(p.name)] = null;
+      }
+    });
+    if (Object.keys(scoreUpdates).length) await db.ref().update(scoreUpdates);
     await db.ref('events/'+currentEventId+'/people/'+key).set(null);
     showToast('Deltaker fjernet');
     renderPeopleList();

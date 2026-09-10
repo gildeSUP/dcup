@@ -414,21 +414,41 @@ Dette ble mer synlig av #17 i går (turneringen er ikke lenger «ferdig» før
 finalen er spilt), men hullet har alltid vært der. Det er også den delen av
 kvelden folk faktisk samler seg rundt skjermen for.
 
-#### 37. Fjernet deltaker blir stående i en startet turnering
+#### 37. ✅ Fikset — en deltaker i en startet turnering kan ikke fjernes
 
-`removePerson` kaller `setSignup(tid, navn, false)`, som bare rører
-`players`-lista. Er turneringen alt trukket, blir personen stående i
-`groups[].players`, i kampoppsettet og i resultatene.
+**Var:** `removePerson` kalte `setSignup(tid, navn, false)`, som bare rører
+`players`. Var turneringen alt trukket, ble personen stående i
+`groups[].players`, i kampoppsettet og i resultatene — synlig i tabellen og i
+kampkøen på TV-en, men uten å være deltaker og uten å kunne omdøpes sentralt.
 
-Bekreftet: fjernet en spiller som var i en trukket gruppe →
-`iPlayers: false`, `iDeltakerliste: false`, men `iGruppe: true`,
-`iKamper: true`, `iResultater: true`. De vises altså fortsatt i tabellen og i
-kampkøen på TV-en, samtidig som de ikke lenger er en deltaker og ikke kan
-omdøpes sentralt.
+**Nå:** ny `lockedTournamentsFor(navn)` finner turneringene der navnet er låst
+fast. I deltakerlista bytter krysset til et 🔒 for de som er låst, og
+`removePerson` sjekker det samme på nytt før den gjør noe — en annen telefon
+kan ha startet turneringen mens lista sto åpen.
 
-Riktig oppførsel er neppe å rive dem ut av en pågående gruppe — det ville
-etterlate en gruppe med oddetall og resultater som peker på ingen. Men da må
-appen si fra: «X er med i en startet turnering og kan ikke fjernes derfra».
+Låsen er en **knapp**, ikke bare et ikon: trykker du på den, sier den «Låst i
+«Bordtennis» — turneringen er startet». På mobil finnes ingen hover, så en
+`title` alene ville aldri forklart hvorfor krysset var borte.
+
+**Gjelder bare gruppespill** (`isSignupLocked`), ikke poengtavler. En
+poengtavle har ingen trekning — det er nettopp derfor `addBoardPlayer` lar folk
+komme til underveis — og der skal man fortsatt kunne fjernes. Å låse en
+poengtavle så snart én person hadde levert score ville tatt bort noe som
+fungerer i dag.
+
+**Omdøping er fortsatt lov** på en låst deltaker: `renameInTournament` bytter
+navnet overalt det forekommer, også i grupper, kampoppsett, resultatnøkler,
+`playoffResults` og `tiebreaks`. Det er bare *fjerning* som er farlig.
+
+**Ryddet samtidig:** fjerner du noen fra en poengtavle, slettes også
+`scores/<nøkkel>`. Den fulgte ikke med `players` før, så scoren ble liggende
+usynlig igjen — og dukket opp som en gammel score hvis navnet ble lagt til på
+nytt.
+
+**Verifisert** med seks deltakere i et startet gruppespill og tre på en
+poengtavle: ingen låser før start, seks låser og tre kryss etter, låsen
+navngir turneringen, `removePerson` kalt direkte lar seg ikke lure, og
+poengtavla lar seg fortsatt fjerne fra — med scoren ryddet bort.
 
 #### 38. En slettet turnering gjenoppstår, og skjermen merker det ikke
 
