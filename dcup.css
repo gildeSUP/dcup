@@ -384,6 +384,11 @@ label.signup-row.locked { opacity: 0.45; cursor: default; }
 label.signup-row input { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--accent); }
 .join-icon { font-size: 20px; }
 .join-info { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+/* Navnet i deltakerlista er en knapp som åpner «endre påmelding». Nullstiller
+   knappestilen så raden ser ut nøyaktig som før. */
+button.join-info { background: none; border: none; padding: 0; font: inherit;
+  color: inherit; text-align: left; cursor: pointer; }
+button.join-info:hover .join-sub { color: var(--accent-text); }
 .join-name-txt { font-size: 14px; font-weight: 600; }
 .join-sub { font-size: 11px; color: var(--text2); }
 .copy-btn { font-size: 12px; padding: 5px 10px; border-radius: var(--radius); border: 0.5px solid var(--border2); background: var(--bg2); color: var(--text2); cursor: pointer; }
@@ -411,12 +416,12 @@ label.signup-row input { width: 18px; height: 18px; flex-shrink: 0; accent-color
    Under 640px gjelder ingenting av dette: mobil er helt uendret. */
 @media (min-width: 640px) {
   #join-overlay, #people-overlay, #start-tournament-overlay, #add-tournament-overlay,
-  #tiebreak-overlay {
+  #tiebreak-overlay, #participation-overlay {
     align-items: center !important;
   }
   #join-overlay > div, #people-overlay > div,
   #start-tournament-overlay > div, #add-tournament-overlay > div,
-  #tiebreak-overlay > div {
+  #tiebreak-overlay > div, #participation-overlay > div {
     border-radius: var(--radius-lg) !important;
     /* 2.5rem nederst finnes for å klarere hjemindikatoren på telefon */
     padding-bottom: 1.25rem !important;

@@ -24,7 +24,7 @@ function uuid() {
 // i stedet.
 function anyDialogOpen() {
   const ids = ['join-overlay','people-overlay','add-tournament-overlay',
-               'start-tournament-overlay','tiebreak-overlay'];
+               'start-tournament-overlay','tiebreak-overlay','participation-overlay'];
   if (ids.some(id => {
     const el = document.getElementById(id);
     return el && el.style.display !== 'none' && el.style.display !== '';
@@ -552,10 +552,11 @@ function renderPeopleList() {
     const locked = lockedTournamentsFor(p.name);
     return `<label class="signup-row" style="cursor:default;">
       <span class="join-icon">🙋</span>
-      <span class="join-info">
+      <button class="join-info" data-act="tournaments" data-key="${escapeHTML(key)}"
+              title="Endre hvilke turneringer ${escapeHTML(p.name)} er med i">
         <span class="join-name-txt">${escapeHTML(p.name)}</span>
-        <span class="join-sub">${sports.length ? sports.join(' ') : 'Ingen turneringer ennå'}</span>
-      </span>
+        <span class="join-sub">${sports.length ? sports.join(' ') + ' · endre' : 'Ingen turneringer — trykk for å melde på'}</span>
+      </button>
       <button class="board-edit" title="Rediger navn" data-act="rename" data-key="${escapeHTML(key)}">✏️</button>
       ${locked.length
         ? `<button class="people-lock" data-act="locked" data-key="${escapeHTML(key)}"
@@ -571,7 +572,8 @@ function renderPeopleList() {
 document.getElementById('people-list')?.addEventListener('click', e => {
   const btn = e.target.closest('[data-act]');
   if (!btn) return;
-  if (btn.dataset.act === 'rename') renamePerson(btn.dataset.key);
+  if (btn.dataset.act === 'tournaments') openParticipation(btn.dataset.key);
+  else if (btn.dataset.act === 'rename') renamePerson(btn.dataset.key);
   else if (btn.dataset.act === 'remove') removePerson(btn.dataset.key);
   // Låsen er en knapp og ikke bare et ikon, slik at den kan trykkes: på mobil
   // finnes ingen hover, så en title alene ville aldri forklart noe.
@@ -746,6 +748,85 @@ async function renamePerson(oldKey) {
   } catch (err) {
     showToast('Kunne ikke oppdatere navn — prøv igjen');
   }
+}
+
+// ===== ENDRE PÅMELDING =====
+// Egen dialog i stedet for å gjøre saveJoin toveis: «meld på» er additiv med
+// vilje — der skal det å legge til én person aldri kunne fjerne dem fra noe
+// annet. Her er hele poenget å kunne krysse av og bort.
+//
+// Startede turneringer kan verken krysses av eller bort: trekningen er gjort,
+// så et nytt navn havner ikke i noen gruppe, og et fjernet navn ville stått
+// igjen i gruppa, kampoppsettet og resultatene (samme grunn som 🔒 i lista).
+let partCtx = null;
+
+function openParticipation(key) {
+  const p = eventPeople[key];
+  if (!p) return;
+  partCtx = { key, name: p.name };
+  document.getElementById('participation-sub').textContent =
+    `Velg hvilke turneringer ${p.name} skal være med i.`;
+  renderParticipationList();
+  document.getElementById('participation-overlay').style.display = 'flex';
+  lockBodyScroll();
+}
+
+function hideParticipation() {
+  partCtx = null;
+  document.getElementById('participation-overlay').style.display = 'none';
+  unlockBodyScroll();
+}
+
+function renderParticipationList() {
+  if (!partCtx) return;
+  const entries = sortedTournaments(tournaments);
+  const wrap = document.getElementById('participation-list');
+  if (!entries.length) {
+    wrap.innerHTML = '<p class="muted">Ingen turneringer ennå.</p>';
+    return;
+  }
+  wrap.innerHTML = entries.map(([id, t]) => {
+    const sport = SPORTS.find(s=>s.id===t.sport)||SPORTS[SPORTS.length-1];
+    const locked = isSignupLocked(t);
+    const inIt = (t.players||[]).includes(partCtx.name);
+    return `<label class="signup-row${locked?' locked':''}">
+      <input type="checkbox" data-tid="${id}" ${inIt?'checked':''} ${locked?'disabled':''} />
+      <span class="join-icon">${sport.icon}</span>
+      <span class="join-info">
+        <span class="join-name-txt">${escapeHTML(t.name)}</span>
+        <span class="join-sub">${sport.label}${locked?(inIt?' · startet, kan ikke meldes av':' · startet, stengt'):''}</span>
+      </span>
+    </label>`;
+  }).join('');
+}
+
+// Skriver bare der avkryssingen faktisk er endret. setSignup er en transaksjon
+// per turnering, så to som endrer samtidig ikke overskriver hverandre.
+async function saveParticipation() {
+  if (!partCtx) return;
+  const name = partCtx.name;
+  const btn = document.getElementById('participation-save-btn');
+  btn.disabled = true; btn.textContent = 'Lagrer…';
+  let added = 0, removed = 0, skipped = 0;
+  for (const box of document.querySelectorAll('#participation-list input[type=checkbox]')) {
+    if (box.disabled) continue;
+    const t = tournaments[box.dataset.tid];
+    if (!t) continue;
+    // Sjekkes på nytt: turneringen kan ha blitt startet mens dialogen sto åpen
+    if (isSignupLocked(t)) { skipped++; continue; }
+    const isIn = (t.players||[]).includes(name);
+    if (box.checked === isIn) continue;
+    await setSignup(box.dataset.tid, name, box.checked);
+    if (box.checked) added++; else removed++;
+  }
+  btn.disabled = false; btn.textContent = 'Lagre';
+  const parts = [];
+  if (added) parts.push(`meldt på ${added}`);
+  if (removed) parts.push(`meldt av ${removed}`);
+  if (skipped) parts.push(`${skipped} rakk å starte`);
+  showToast(parts.length ? parts.join(' · ') : 'Ingen endring');
+  hideParticipation();
+  renderPeopleList();
 }
 
 function showJoinDialog() {
