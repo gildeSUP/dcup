@@ -258,12 +258,8 @@ permutasjoner av en tresykel gir samme rekkefølge.
 **29** — kollisjonssjekken i `renamePerson` ser nå i `eventPeople` **og** i alle
 turneringer via `tournamentHasName`.
 
-**Gjenstår fra #29:** `addTPlayer` og `addBoardPlayer` skriver aldri til
-`people/`. Utover kollisjonssjekken betyr det at en spiller lagt til i
-turneringsoppsettet ikke finnes i deltakerlista — hun kan ikke omdøpes eller
-fjernes sentralt, og dukker ikke opp i forhåndsvalget for neste turnering. Det
-er nok den egentlige buggen bak #29, men å registrere dem endrer atferd utover
-det som ble rapportert.
+**Gjenstår fra #29:** ingenting — `setSignup` skriver nå til `people/`, se
+listen nederst under 10. september.
 
 ---
 
@@ -595,11 +591,17 @@ skjult etterpå, ingen `alert`, ingen uhåndtert rejection.
 
 #### Fortsatt åpent fra før, som denne gjennomgangen bekrefter
 
-- **`addTPlayer`/`addBoardPlayer` skriver aldri til `people/`** (notert under
-  #29). En spiller lagt til i turneringsoppsettet finnes ikke i
-  deltakerlista, kan ikke omdøpes eller fjernes sentralt, og er ikke med i
-  forhåndsvalget for neste turnering. Nå som deltakerknappen med antall står
-  synlig i toppen, blir avviket lettere å legge merke til.
+- ✅ **`addTPlayer`/`addBoardPlayer` skriver aldri til `people/`** — fikset.
+  Slo ut i praksis 10. september: arrangøren var eneste navn i `people/` mens
+  alle andre lå i turneringene. `setSignup` er det ene stedet alle veier inn i
+  en turnering går gjennom, så `upsertPerson(name)` ligger nå der.
+  `syncPeopleFromTournaments()` reparerer eventer som alt sto skjevt — den
+  plukker navn fra `players`, `groups[].players` og `scores`, er idempotent og
+  kjører på hvert snapshot fra alle klienter. Avmelding fjerner **ikke** fra
+  `people/`; du er på eventet selv om du hopper av en konkurranse.
+  **Verifisert:** turnering seedet med tre navn på tre ulike steder, alle tre
+  dukket opp i deltakerlista innen ett snapshot; to ekstra kall skrev ingenting
+  nytt, og `joined` på en eksisterende person var uendret.
 - **XSS ser fortsatt lukket ut.** Testet med `O'Brien`,
   `<img src=x onerror=alert(1)>`, `Ærlig Å` og et 40 tegns navn i
   spillerlista: alt rendres som tekst, ingen `img`-tagg havner i DOM-et,

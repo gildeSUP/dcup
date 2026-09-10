@@ -8,7 +8,7 @@
 <meta name="robots" content="noindex, nofollow" />
 <title>dCup</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg?v=1" />
-<link rel="stylesheet" href="dcup.css?v=20">
+<link rel="stylesheet" href="dcup.css?v=22">
 </head>
 <body>
 
@@ -294,6 +294,12 @@
         </div>
         <div class="player-tags" id="t-player-list"></div>
         <div class="form-error" id="t-player-error"></div>
+        <!-- Alle som alt er med på eventet: hak av i stedet for å skrive
+             navnet på nytt. Skrivefeltet over er for folk som ikke finnes ennå. -->
+        <div id="t-people-pick" style="display:none;">
+          <div class="muted mt1 mb1" style="font-size:12px;font-weight:600;">Eller hak av blant deltakerne på eventet</div>
+          <div id="t-people-list"></div>
+        </div>
         <div class="row mt1">
           <button class="btn btn-primary" onclick="startTournament()">Start turnering</button>
           <button class="btn" onclick="clearTPlayers()">Tøm</button>
@@ -391,6 +397,14 @@
       <span>dCompany</span>
     </div>
     <button class="btn-ghost btn-sm" onclick="exitDisplay()" style="opacity:0.4;font-size:11px;">Avslutt</button>
+  </div>
+
+  <!-- Skjermsparer: dekker hele liveskjermen når ingen turnering er i gang.
+       Trykk vekker skjermen i 30 s, ellers ligger «Avslutt» under bildet. -->
+  <div class="disp-saver" id="disp-saver" style="display:none;" onclick="wakeSaver()"
+       title="Trykk for å vise skjermen">
+    <img class="disp-saver-img" src="kickoff.png?v=1" alt="" onerror="this.remove()" />
+    <div class="disp-saver-msg" id="disp-saver-msg"></div>
   </div>
 </div>
 

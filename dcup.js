@@ -54,6 +54,7 @@ function closeTopDialog() {
     return true;
   }
   const closers = {
+    'participation-overlay': hideParticipation,   // øverst når den er åpen
     'tiebreak-overlay': hideTiebreakDialog,
     'start-tournament-overlay': hideStartDialog,
     'add-tournament-overlay': hideAddTournament,
@@ -420,15 +421,22 @@ async function loadEvent(eventId, focusTId) {
   peopleRef = db.ref('events/'+eventId+'/people');
   peopleRef.on('value', snap => {
     eventPeople = snap.val() || {};
+    peopleSeen = true;
     renderPeopleCount();
+    syncPeopleFromTournaments();
+    // Står man i turneringsoppsettet skal hakelista få med seg at noen ble
+    // lagt til på eventet fra en annen telefon.
+    if (currentTId) renderTPeoplePick();
   });
 
   eventRef = db.ref('events/'+eventId+'/tournaments');
   setSyncStatus('connecting', 'event');
   eventRef.on('value', snap => {
     tournaments = snap.val() || {};
+    tournamentsSeen = true;
     setSyncStatus('live', 'event');
     renderTournamentList();
+    syncPeopleFromTournaments();
     // Bare ved første snapshot. Callbacken fyrer på hver endring i eventet, så
     // uten dette ble man kastet tilbake til «Grupper» hver gang noen
     // registrerte et resultat — og dratt inn i turneringen igjen etter «Event».
@@ -498,8 +506,18 @@ function renderTournamentList() {
   }).join('');
 }
 
-// Skriver bare til players-lista, med transaksjon: tjue mobiler som melder
-// seg på samtidig skal ikke overskrive hverandre slik set(hele turneringen) ville.
+// Skriver til players-lista med transaksjon: tjue mobiler som melder seg på
+// samtidig skal ikke overskrive hverandre slik set(hele turneringen) ville.
+//
+// Og til people/: dette er det ene stedet alle veier inn i en turnering går
+// gjennom (påmeldingsdialogen, spillerfeltet i «ny turnering», poengtavla), så
+// det er her personen blir kjent for eventet. Sto den skrivingen bare i
+// saveJoin, havnet alle som ble lagt til inne fra en turnering i players uten å
+// finnes i «Deltakere» — som er nøyaktig det som skjedde: eventet hadde én
+// person i people og resten bare i turneringene.
+//
+// Avmelding fjerner ikke fra people. Du er på eventet selv om du hopper av en
+// konkurranse; å bli slettet fra deltakerlista er noe man gjør bevisst der.
 async function setSignup(tid, name, join) {
   const ref = db.ref('events/'+currentEventId+'/tournaments/'+tid+'/players');
   try {
@@ -510,9 +528,39 @@ async function setSignup(tid, name, join) {
       if (join) return arr.includes(name) ? undefined : [...arr, name];
       return arr.includes(name) ? arr.filter(p => p !== name) : undefined;
     });
+    if (join) await upsertPerson(name);
   } catch (err) {
     showToast('Kunne ikke lagre påmeldingen — prøv igjen');
   }
+}
+
+// joined settes bare første gang: den er sorteringsnøkkel for deltakerlista, og
+// en som melder seg på turnering nummer to skal ikke hoppe til bunnen.
+function upsertPerson(name) {
+  return db.ref('events/'+currentEventId+'/people/'+safeKey(name))
+    .transaction(cur => cur && cur.joined ? { ...cur, name } : { name, joined: Date.now() });
+}
+
+// Alle navn som finnes i en turnering, uansett hvor de står. Etter trekningen
+// ligger de i gruppene, ikke i players.
+function namesInTournament(t) {
+  const out = new Set(t.players || []);
+  groupsOf(t).forEach(g => g.players.forEach(n => out.add(n)));
+  Object.values(t.scores || {}).forEach(sc => { if (sc && sc.name) out.add(sc.name); });
+  return out;
+}
+
+// Reparerer eventer som ble laget før setSignup skrev til people/: navn som
+// står i en turnering, men mangler i deltakerlista, legges inn. Idempotent, så
+// den kan kjøre på hvert snapshot og fra alle klienter samtidig — den skriver
+// bare når noe faktisk mangler.
+let peopleSeen = false, tournamentsSeen = false;
+function syncPeopleFromTournaments() {
+  if (!peopleSeen || !tournamentsSeen || !currentEventId) return;
+  const missing = new Set();
+  Object.values(tournaments).forEach(t =>
+    namesInTournament(t).forEach(n => { if (n && !eventPeople[safeKey(n)]) missing.add(n); }));
+  missing.forEach(n => upsertPerson(n).catch(() => {}));
 }
 
 function renderPeopleCount() {
@@ -760,6 +808,11 @@ async function renamePerson(oldKey) {
 // igjen i gruppa, kampoppsettet og resultatene (samme grunn som 🔒 i lista).
 let partCtx = null;
 
+// Drill-down fra deltakerlista, ikke et ark oppå. Før dette ble begge stående
+// åpne samtidig — og siden participation-overlay ligger før people-overlay i
+// DOM-en og begge har z-index 500, havnet det nye arket bak det gamle.
+let partFromPeople = false;
+
 function openParticipation(key) {
   const p = eventPeople[key];
   if (!p) return;
@@ -767,14 +820,28 @@ function openParticipation(key) {
   document.getElementById('participation-sub').textContent =
     `Velg hvilke turneringer ${p.name} skal være med i.`;
   renderParticipationList();
+
+  // Deltakerlista skjules uten å slippe scroll-låsen eller historikk-
+  // oppføringen: det er samme ark-plass, så låsen skal bare tas én gang.
+  const people = document.getElementById('people-overlay');
+  partFromPeople = !!people && people.style.display !== 'none' && people.style.display !== '';
+  if (partFromPeople) people.style.display = 'none';
+
   document.getElementById('participation-overlay').style.display = 'flex';
-  lockBodyScroll();
+  if (!partFromPeople) lockBodyScroll();
 }
 
 function hideParticipation() {
   partCtx = null;
   document.getElementById('participation-overlay').style.display = 'none';
-  unlockBodyScroll();
+  if (partFromPeople) {
+    // Tilbake til deltakerlista, med ikonene oppdatert etter endringen
+    partFromPeople = false;
+    renderPeopleList();
+    document.getElementById('people-overlay').style.display = 'flex';
+  } else {
+    unlockBodyScroll();
+  }
 }
 
 function renderParticipationList() {
@@ -881,10 +948,7 @@ async function saveJoin() {
   btn.disabled = true; btn.textContent = 'Lagrer…';
 
   try {
-    // joined settes bare første gang: den er sorteringsnøkkel for
-    // deltakerlista, og en som legges til igjen skal ikke hoppe til bunnen.
-    await db.ref('events/'+currentEventId+'/people/'+safeKey(name))
-      .transaction(cur => cur && cur.joined ? { ...cur, name } : { name, joined: Date.now() });
+    await upsertPerson(name);
     for (const box of document.querySelectorAll('#join-list input[type=checkbox]')) {
       if (box.disabled || !box.checked) continue;
       // Sjekkes på nytt her: turneringen kan ha blitt startet mens dialogen sto åpen
@@ -1156,6 +1220,49 @@ function renderTPlayers() {
     tag.append(btn);
     list.append(tag);
   });
+  renderTPeoplePick();
+}
+
+// Hakeliste over alle som er med på eventet. Skrivefeltet over dekker bare den
+// som ikke finnes ennå — den som alt er registrert skulle slippe å skrive
+// navnet sitt på nytt for hver konkurranse, og et navn skrevet litt annerledes
+// («Ola» mot «Ola Nordmann») ble en ny person med egen rad i deltakerlista.
+function renderTPeoplePick() {
+  const wrap = document.getElementById('t-people-pick');
+  const list = document.getElementById('t-people-list');
+  if (!wrap || !list) return;
+  const people = Object.values(eventPeople).sort((a,b)=>(a.joined||0)-(b.joined||0));
+  wrap.style.display = people.length ? 'block' : 'none';
+  if (!people.length) { list.innerHTML = ''; return; }
+  const inT = new Set(tState.players || []);
+  list.innerHTML = '';
+  people.forEach(p => {
+    const row = document.createElement('label');
+    row.className = 'signup-row';
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = inT.has(p.name);
+    // Navnet leses fra closure, ikke fra en indeks: lista tegnes på nytt ved
+    // hvert snapshot, så en indeks kunne peke på en annen person i det
+    // fingeren treffer. Samme mønster som spillertaggene og poengtavla (#9).
+    box.addEventListener('change', () => toggleTPerson(p.name, box.checked));
+    const info = document.createElement('span');
+    info.className = 'join-info';
+    const txt = document.createElement('span');
+    txt.className = 'join-name-txt';
+    txt.append(p.name);                     // textContent, aldri innerHTML
+    info.append(txt);
+    row.append(box, info);
+    list.append(row);
+  });
+}
+
+function toggleTPerson(name, join) {
+  const players = tState.players || [];
+  if (join && !players.includes(name)) tState.players = [...players, name];
+  else if (!join) tState.players = players.filter(n => n !== name);
+  renderTPlayers();
+  setSignup(currentTId, name, join);
 }
 
 document.getElementById('t-player-input')?.addEventListener('keydown', e=>{if(e.key==='Enter')addTPlayer();});
@@ -2492,6 +2599,7 @@ function exitDisplay() {
   displayIntervals=[];
   displayTimers.forEach(clearTimeout);
   displayTimers=[];
+  if (saverWakeTimer) { clearTimeout(saverWakeTimer); saverWakeTimer = null; }
   if (dispRef) dispRef.off();
   releaseWakeLock();
   // P2 #21: «Avslutt» sendte deg til forsiden, altså ut av eventet du sto i.
@@ -2849,13 +2957,45 @@ function syncProgressBar() {
 function renderDisplay() {
   renderDisplayContent();
   syncProgressBar();
+  syncSaver();
+}
+
+function idleMessage() {
+  return Object.keys(dispTournaments).length
+    ? 'Venter på at en turnering skal starte'
+    : 'Ingen turneringer ennå';
+}
+
+// ===== SKJERMSPARER =====
+// Når ingen turnering er i gang er liveskjermen bare et bilde på veggen, ikke
+// en app som venter. Skjermspareren legger seg over hele liveskjermen — også
+// header og footer — så TV-en viser kick-off-banneret i stedet for en tom
+// ramme. Den forsvinner av seg selv i det første kampoppsettet dukker opp.
+//
+// Et trykk vekker skjermen i SAVER_WAKE ms. Det må finnes: uten det ligger
+// «Avslutt» under bildet, og da er det ingen vei ut av visningsmodus.
+const SAVER_WAKE = 30000;
+let saverWakeTimer = null;
+function syncSaver() {
+  const el = document.getElementById('disp-saver');
+  if (!el) return;
+  const show = !visibleDispTournaments().length && !saverWakeTimer;
+  if (show) document.getElementById('disp-saver-msg').textContent = idleMessage();
+  el.style.display = show ? 'flex' : 'none';
+}
+function wakeSaver() {
+  if (saverWakeTimer) clearTimeout(saverWakeTimer);
+  saverWakeTimer = setTimeout(() => { saverWakeTimer = null; syncSaver(); }, SAVER_WAKE);
+  syncSaver();
 }
 
 function renderDisplayContent() {
   const tList = visibleDispTournaments();
   if (!tList.length) {
-    const msg = Object.keys(dispTournaments).length ? 'Venter på at en turnering skal starte' : 'Ingen turneringer ennå';
-    document.getElementById('disp-content').innerHTML = `<div style="opacity:0.3;text-align:center;padding:3rem;font-size:18px;">${msg}</div>`;
+    // Selve tomtilstanden dekkes av skjermspareren (syncSaver), men teksten
+    // ligger her likevel: den er det man ser i de 30 sekundene skjermen er
+    // vekket, og hvis bildet ikke finnes.
+    document.getElementById('disp-content').innerHTML = `<div style="opacity:0.3;text-align:center;padding:3rem;font-size:18px;">${escapeHTML(idleMessage())}</div>`;
     return;
   }
   dispCurrent = Math.min(dispCurrent, tList.length-1);
