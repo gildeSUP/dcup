@@ -7,7 +7,7 @@
      De skal kunne deles fritt, men ikke ligge søkbare i Google. -->
 <meta name="robots" content="noindex, nofollow" />
 <title>dCup</title>
-<link rel="stylesheet" href="dcup.css?v=14">
+<link rel="stylesheet" href="dcup.css?v=15">
 </head>
 <body>
 
@@ -50,6 +50,9 @@
       <button class="btn btn-primary" onclick="joinEvent()">Åpne</button>
     </div>
     <div class="form-error" id="join-error"></div>
+    <!-- #43: ventetilstand og feilmelding når et event åpnes -->
+    <p class="muted" id="home-loading" style="display:none;margin-top:0.75rem;"></p>
+    <div class="form-error" id="home-error" style="display:none;"></div>
   </div>
 </div>
 
@@ -95,6 +98,14 @@
       <div style="font-size:15px;font-weight:700;">Turneringer</div>
       <div style="display:flex;gap:8px;">
         <button class="copy-btn" onclick="openDisplayScreen()">📺 Liveskjerm</button>
+      </div>
+    </div>
+    <!-- Reserve for «Del link» når navigator.clipboard mangler (#41) -->
+    <div id="link-fallback" class="link-fallback" style="display:none;">
+      <p class="muted mb1">Nettleseren tillater ikke automatisk kopiering. Marker linken og kopier den:</p>
+      <div class="input-row">
+        <input type="text" id="link-fallback-url" readonly />
+        <button class="btn" onclick="hideLinkFallback()">Lukk</button>
       </div>
     </div>
     <div class="tournament-list" id="tournament-list"></div>

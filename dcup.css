@@ -343,6 +343,9 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 .board-edit:hover { color: var(--accent); }
 .start-warning { background: var(--amber-bg); color: var(--amber-text); border-left: 2px solid var(--amber);
   border-radius: 0 var(--radius) var(--radius) 0; padding: 0.7rem 0.9rem; font-size: 13px; line-height: 1.45; margin-bottom: 0.5rem; }
+.link-fallback { background: var(--bg2); border: 0.5px solid var(--border2);
+  border-radius: var(--radius); padding: 0.9rem 1rem; margin-bottom: 1rem; }
+.link-fallback input { font-size: 13px; }
 .input-row { display: flex; gap: 8px; margin-bottom: 0.5rem; }
 .input-row input { flex: 1; }
 .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }

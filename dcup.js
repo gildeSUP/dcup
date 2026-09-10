@@ -31,6 +31,43 @@ function anyDialogOpen() {
   })) return true;
   return !!document.querySelector('.match-dialog-overlay');
 }
+// Tilbake lukker en åpen dialog i stedet for å navigere — det er det folk
+// forventer, og ellers forsvinner hele skjermen bak dialogen.
+window.addEventListener('popstate', e => {
+  closingFromPopstate = true;
+  const closed = closeTopDialog();
+  closingFromPopstate = false;
+  if (closed) return;   // oppføringen dialogen la igjen er nettopp spist
+  const st = e.state || {};
+  const onTournament = document.getElementById('screen-tournament').classList.contains('active');
+  if (onTournament && st.screen !== 'tournament') { backToEvent(); return; }
+  if (st.screen === 'tournament' && st.t && tournaments[st.t]) openTournament(st.t);
+});
+
+// Lukker den øverste åpne dialogen, hvis noen. Returnerer om noe ble lukket.
+function closeTopDialog() {
+  if (document.querySelector('.match-dialog-overlay')) {
+    document.getElementById('match-dialog-container').innerHTML = '';
+    unlockBodyScroll();
+    return true;
+  }
+  const closers = {
+    'tiebreak-overlay': hideTiebreakDialog,
+    'start-tournament-overlay': hideStartDialog,
+    'add-tournament-overlay': hideAddTournament,
+    'people-overlay': hidePeopleDialog,
+    'join-overlay': hideJoinDialog,
+  };
+  for (const [id, close] of Object.entries(closers)) {
+    const el = document.getElementById(id);
+    if (el && el.style.display !== 'none' && el.style.display !== '') {
+      try { close(); } catch (err) { el.style.display = 'none'; unlockBodyScroll(); }
+      return true;
+    }
+  }
+  return false;
+}
+
 function showToast(msg) {
   const t=document.getElementById('toast');
   t.textContent=msg;
@@ -40,14 +77,37 @@ function showToast(msg) {
 }
 // Bunn-modalene har sin egen scroll (overflow-y:auto) for langt innhold —
 // uten dette kan siden bak fortsatt scrolle samtidig, som er forvirrende.
+// Hver dialog legger igjen en egen historikkoppføring, slik at tilbake spiser
+// nettopp den i stedet for å navigere. Å re-pushe state inne i popstate var
+// feil: da hadde nettleseren alt flyttet seg, og skjermen byttet under dialogen.
+let dialogHistoryDepth = 0;
+function pushDialogHistory() {
+  dialogHistoryDepth++;
+  history.pushState({ dialog: dialogHistoryDepth, screen: (history.state||{}).screen,
+                      t: (history.state||{}).t }, '', window.location.href);
+}
+
 function lockBodyScroll() {
+  pushDialogHistory();
   document.body.style.overflow = 'hidden';
   // Sto det allerede en toast nederst da arket kom opp, havner den under
   // knappene — løft den samme vei som showToast gjør (P2 #32).
   const t = document.getElementById('toast');
   if (t && t.classList.contains('show')) t.classList.add('toast-top');
 }
-function unlockBodyScroll() { document.body.style.overflow = ''; }
+function unlockBodyScroll() {
+  document.body.style.overflow = '';
+  // Ble dialogen lukket med en knapp, ligger dialogoppføringen fortsatt i
+  // historikken. Da må den bort, ellers krever det ett ekstra tilbake-trykk
+  // å komme videre. popstate setter flagget, siden oppføringen alt er spist.
+  if (dialogHistoryDepth > 0 && !closingFromPopstate) {
+    dialogHistoryDepth--;
+    history.back();
+  } else if (dialogHistoryDepth > 0) {
+    dialogHistoryDepth--;
+  }
+}
+let closingFromPopstate = false;
 
 // Turneringsnøklene er UUID-er, så Firebase gir dem tilbake sortert på
 // tilfeldig streng — lista hoppet rundt for hver klient. `created` settes på
@@ -298,11 +358,25 @@ let peopleRef = null;
 async function loadEvent(eventId, focusTId) {
   currentEventId = eventId;
   if (peopleRef) peopleRef.off();
-  const snap = await db.ref('events/'+eventId+'/meta').once('value');
-  const meta = snap.val();
+
+  // Uten dette sto brukeren på en tom forside uten et ord — både når nettet er
+  // tregt og når reglene nekter lesing. Tjue telefoner på gjestenettet er
+  // nettopp der dette merkes.
+  const errEl = document.getElementById('home-error');
+  if (errEl) errEl.style.display = 'none';   // et nytt forsøk skal ikke vise forrige feil
+  setLoading('Laster event…');
+  let meta = null;
+  try {
+    const snap = await db.ref('events/'+eventId+'/meta').once('value');
+    meta = snap.val();
+  } catch (err) {
+    setLoading(null);
+    showEventError('Fikk ikke kontakt med basen. Sjekk nettet og prøv igjen.');
+    return;
+  }
+  setLoading(null);
   if (!meta) {
-    alert('Event ikke funnet.');
-    showScreen('screen-home');
+    showEventError('Event ikke funnet. Sjekk at linken er hel.');
     return;
   }
   eventMeta = meta;
@@ -334,6 +408,21 @@ async function loadEvent(eventId, focusTId) {
 
   showScreen('screen-event');
   updateEventURL(eventId);
+}
+
+// Ventetilstand og feilmelding på forsiden, i stedet for alert() og stillhet.
+function setLoading(msg) {
+  const el = document.getElementById('home-loading');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.style.display = msg ? 'block' : 'none';
+}
+function showEventError(msg) {
+  showScreen('screen-home');
+  const el = document.getElementById('home-error');
+  if (!el) { showToast(msg); return; }
+  el.textContent = msg;
+  el.style.display = 'block';
 }
 
 function updateEventURL(eventId) {
@@ -698,7 +787,29 @@ async function saveJoin() {
 
 function copyEventLink() {
   const url = window.location.origin + window.location.pathname + '?e=' + currentEventId;
-  navigator.clipboard.writeText(url).then(()=>showToast('Link kopiert!'));
+  // navigator.clipboard mangler i flere innebygde nettlesere — Slack, Teams,
+  // Facebook, LinkedIn — altså nettopp der en link til et firmaarrangement
+  // åpnes. Uten catch kastet den, og brukeren fikk ingen beskjed i det hele
+  // tatt. Reserveløsningen viser linken slik at den kan markeres og kopieres.
+  const clip = navigator.clipboard;
+  if (!clip || !clip.writeText) { showLinkFallback(url); return; }
+  clip.writeText(url)
+    .then(() => showToast('Link kopiert!'))
+    .catch(() => showLinkFallback(url));
+}
+
+function showLinkFallback(url) {
+  const box = document.getElementById('link-fallback');
+  const field = document.getElementById('link-fallback-url');
+  if (!box || !field) { showToast(url); return; }
+  field.value = url;
+  box.style.display = 'block';
+  field.focus();
+  field.select();
+}
+function hideLinkFallback() {
+  const box = document.getElementById('link-fallback');
+  if (box) box.style.display = 'none';
 }
 
 // ===== ADD TOURNAMENT =====
@@ -782,10 +893,16 @@ function openTournament(id) {
   const boardInput = document.getElementById('t-board-input');
   if (boardInput) boardInput.value = '';
 
-  // Update URL
+  // pushState, ikke replaceState: tilbakeknappen skal føre til eventskjermen.
+  // Appen brukte bare replaceState, så «tilbake» hoppet helt ut av eventet og
+  // landet på forsiden — og tilbake er den mest brukte bevegelsen på telefon.
   const url = new URL(window.location.href);
   url.searchParams.set('t', id);
-  window.history.replaceState({}, '', url.toString());
+  if (new URLSearchParams(window.location.search).get('t') === id) {
+    window.history.replaceState({ screen:'tournament', t:id }, '', url.toString());
+  } else {
+    window.history.pushState({ screen:'tournament', t:id }, '', url.toString());
+  }
 
   // Live listener
   if (tRef) tRef.off();
@@ -905,9 +1022,26 @@ function renderTPlayers() {
   document.getElementById('t-count').textContent = (tState.players||[]).length;
   const minEl = document.getElementById('t-min');
   if (minEl) minEl.textContent = MIN_GROUP;
-  document.getElementById('t-player-list').innerHTML = (tState.players||[]).map((p,i)=>
-    `<div class="player-tag">${escapeHTML(p)}<button onclick="removeTPlayer(${i})">×</button></div>`
-  ).join('');
+  // Navnet, ikke indeksen: lista tegnes på nytt ved hvert snapshot, så en
+  // bakt-inn indeks kunne bety en annen person i det fingeren treffer.
+  // Indeksen slås opp når hendelsen skjer — samme mønster som poengtavla (#9).
+  const list = document.getElementById('t-player-list');
+  list.innerHTML = '';
+  (tState.players||[]).forEach(name => {
+    const tag = document.createElement('div');
+    tag.className = 'player-tag';
+    tag.append(name);                       // textContent, aldri innerHTML
+    const btn = document.createElement('button');
+    btn.textContent = '×';
+    btn.title = `Fjern ${name}`;
+    btn.addEventListener('click', () => {
+      const i = (tState.players||[]).indexOf(name);
+      if (i === -1) { showToast('Spilleren er alt fjernet'); return; }
+      removeTPlayer(i);
+    });
+    tag.append(btn);
+    list.append(tag);
+  });
 }
 
 document.getElementById('t-player-input')?.addEventListener('keydown', e=>{if(e.key==='Enter')addTPlayer();});
@@ -2066,6 +2200,9 @@ function openMatchDialog(gi, idx) {
   if (!g) return;
   const fixtures = g.fixtures, results = g.results;
   const f = fixtures[idx];
+  // Oppsettet kan være nullstilt eller trukket på nytt fra en annen telefon i
+  // det fingeren treffer raden. Uten dette kastet fkey(f) på f[0].
+  if (!f) { showToast('Kampoppsettet er endret — prøv igjen'); return; }
   const r = (results||{})[fkey(f)]||{};
   let scoreH = typeof r.homeScore==='number'?r.homeScore:0;
   let scoreA = typeof r.awayScore==='number'?r.awayScore:0;
