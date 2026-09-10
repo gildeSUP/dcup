@@ -15,20 +15,34 @@ Navn i `onclick` (XSS), `focusTId` som kastet deg tilbake ved hver endring,
 0–0 ved klikk utenfor score-dialogen, og `Math.random()` som tiebreak.
 Numrene beholdes fordi `PLAN-GRUPPER.md` viser til dem.
 
-### 5. ⚠️ Verifiser Firebase-reglene — SJEKK FØR EVENTET
-Reglene er endret, men **ikke verifisert ennå**. Kan ikke leses av repoet, så
-dette må gjøres i Firebase-konsollen.
+### 5. ✅ Verifisert utenfra 10. september — reglene er riktig avgrenset
 
-Sjekkliste:
-- [ ] `.read`/`.write` ligger på `events/$eventId`, ikke på roten — ellers kan
-      hvem som helst lese ut *alle* events i basen med ett kall
-- [ ] Åpne et event i appen og bekreft at påmelding, resultat og liveskjerm
-      fortsatt virker med de nye reglene (en for streng regel er like ille som
-      en for åpen: da feiler skrivingene midt i eventet)
-- [ ] Gjerne `.validate` for strenglengder, så en tom database ikke kan fylles opp
+Reglene kan ikke leses av repoet, men de kan **måles** utenfra med REST-kall mot
+basen. Det ble gjort, og alle tre punktene på sjekklista er besvart:
 
-Merk: en regelendring kan ikke testes fra denne kodebasen, bare i praksis mot
-den ekte basen. Test med en throwaway-event før den ekte brukes.
+- [x] **`.read` er avgrenset til `events/$eventId`.** Rot `/` og `events`
+      (liste alle) gir `Permission denied`. `events/<id>/meta` leses fint. Ingen
+      kan altså hente ut alle events med ett kall.
+- [x] **Skrivingene appen trenger virker.** Opprettet `events/<ny>/meta` og
+      `events/<ny>/people/x` — begge godtatt. En for streng regel som ville
+      feilet midt i eventet er dermed utelukket på datanivå.
+- [x] **`.validate` på strenglengde finnes.** `meta.name` godtas på 80 tegn og
+      avvises på 100 (fersk event-id per måling, så resultatene ikke smitter).
+      Grensen ligger altså mellom 80 og 100, godt under noe som kan fylle basen.
+
+**Og den skarpe kanten i #34 er lukket:** `PATCH` mot rota og oppretting av en
+ny toppnivånode gir begge `Permission denied`. Skriving er innesluttet i
+`events/`.
+
+**Det som gjenstår er en kjent begrensning, ikke en feil:** har du event-linken,
+kan du skrive vilkårlige felter og undernoder *inne i det eventet*
+(`events/<id>/tilfeldig`, `meta/tilfeldig` — begge godtatt). Størrelsen er
+begrenset, antallet nøkler er ikke. Det er «noen som er invitert kan rable i
+festens egne data», som er nøyaktig rammen #34 selv setter opp for en
+ett-event-tjeneste. Vil man stramme det, er veien `.validate` med
+`$other: false` på `events/$eventId`.
+
+Alle testnodene ble slettet etterpå.
 
 ### 34. 🔴 Sikkerhetsgjennomgang av tjenesten — HØY PRIORITET
 
